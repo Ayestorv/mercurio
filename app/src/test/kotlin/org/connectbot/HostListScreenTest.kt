@@ -17,8 +17,12 @@
 
 package org.connectbot
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -28,6 +32,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import org.connectbot.data.entity.Host
+import org.connectbot.ui.components.MonoLabel
 import org.connectbot.ui.screens.hostlist.ConnectionState
 import org.connectbot.ui.screens.hostlist.HostListScreen
 import org.connectbot.ui.screens.hostlist.HostListScreenContent
@@ -424,6 +429,39 @@ class HostListScreenTest {
             .assertIsNotEnabled()
     }
 
+    @Test
+    fun hostListScreenContent_hostsSectionComesBeforeMachines() {
+        val host = testHost(id = 5L, nickname = "alpha", protocol = "ssh")
+        val machinesTitle = composeTestRule.activity.getString(R.string.machines_title)
+
+        setHostListContent(
+            uiState = HostListUiState(hosts = listOf(host)),
+            machines = {
+                Column {
+                    MonoLabel(text = machinesTitle)
+                    (1..4).forEach { Text("machine-$it") }
+                }
+            },
+        )
+
+        val hostsTop = composeTestRule
+            .onNodeWithText(composeTestRule.activity.getString(R.string.host_list_section))
+            .assertIsDisplayed()
+            .getBoundsInRoot()
+            .top
+        val machinesTop = composeTestRule
+            .onNodeWithText(machinesTitle)
+            .assertIsDisplayed()
+            .getBoundsInRoot()
+            .top
+        val hostRowTop = composeTestRule
+            .onNodeWithTag(HostListTestTags.itemRow(host.id))
+            .getBoundsInRoot()
+            .top
+        assertTrue("Hosts header above Machines header", hostsTop < machinesTop)
+        assertTrue("Saved host row above Machines header", hostRowTop < machinesTop)
+    }
+
     private fun openTopMenu() {
         composeTestRule
             .onNodeWithContentDescription(composeTestRule.activity.getString(R.string.button_more_options))
@@ -455,6 +493,7 @@ class HostListScreenTest {
         onDisconnectAll: () -> Unit = {},
         onExportHosts: () -> Unit = {},
         onImportHosts: () -> Unit = {},
+        machines: @Composable () -> Unit = {},
     ) {
         composeTestRule.setContent {
             ConnectBotTheme {
@@ -477,6 +516,7 @@ class HostListScreenTest {
                     onDisconnectAll = onDisconnectAll,
                     onExportHosts = onExportHosts,
                     onImportHosts = onImportHosts,
+                    machines = machines,
                 )
             }
         }

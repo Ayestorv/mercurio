@@ -539,7 +539,7 @@ fun HostListScreenContent(
                         ),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        item(key = "machines") { machines() }
+                        // Saved hosts first: the tailnet can list many machines.
                         item(key = "hosts_label") {
                             MonoLabel(
                                 text = stringResource(R.string.host_list_section),
@@ -584,6 +584,7 @@ fun HostListScreenContent(
                                 makingShortcut = makingShortcut,
                             )
                         }
+                        item(key = "machines") { machines() }
                     }
                 }
             }
