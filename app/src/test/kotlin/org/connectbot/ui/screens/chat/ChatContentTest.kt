@@ -20,9 +20,11 @@ package org.connectbot.ui.screens.chat
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -33,8 +35,13 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.connectbot.ui.theme.ConnectBotTheme
 import org.connectbot.usage.LocalUsageLog
@@ -45,6 +52,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import solutions.ormus.logos.herd.HerdAnswer
 import solutions.ormus.logos.herd.HerdrAgentStatus
 
@@ -93,16 +102,21 @@ class ChatContentTest {
     }
 
     @Test
-    fun conversation_userOnTheRight_agentWithMarkdown_toolsOnOneLine() {
+    fun conversation_userOnTheRight_agentTurnLabelled_toolRunOnOneLine() {
         show(state(HerdrAgentStatus.WORKING))
 
         composeTestRule.onNode(hasTestTag(CHAT_USER_TAG) and hasAnyDescendant(hasText("Add a dark mode toggle."))).assertExists()
         // The markers are gone; the words stay.
         composeTestRule.onNodeWithText("Looking at settings first:").assertExists()
         composeTestRule.onNodeWithText("the toggle").assertExists()
-        composeTestRule.onAllNodesWithTag(CHAT_TOOL_TAG).assertCountEquals(2)
-        composeTestRule.onNodeWithText("▸ Edit src/Settings.kt").assertExists()
-        composeTestRule.onNodeWithText("running").assertExists()
+        // The agent turn opens under a hairline with the agent's label.
+        composeTestRule.onAllNodesWithTag(CHAT_TURN_TAG).assertCountEquals(1)
+        composeTestRule.onNodeWithText("/ CLAUDE").assertExists()
+        // The two calls fold into one row until it is opened.
+        composeTestRule.onAllNodesWithTag(CHAT_TOOLS_TAG).assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(CHAT_TOOL_TAG).assertCountEquals(0)
+        composeTestRule.onNodeWithText("▸ 2 tool calls").assertExists()
+        composeTestRule.onNode(hasTestTag(CHAT_TOOLS_TAG) and hasAnyDescendant(hasText("running")), useUnmergedTree = true).assertExists()
         composeTestRule.onNodeWithText("/ WORKING").assertExists()
         composeTestRule.onNodeWithText("claude · Demo / app").assertExists()
         composeTestRule.onAllNodesWithTag(CHAT_WAITING_TAG).assertCountEquals(0)
@@ -123,11 +137,93 @@ class ChatContentTest {
         show(state(HerdrAgentStatus.IDLE), logged)
 
         composeTestRule.onAllNodesWithText("~/app/src/Settings.kt").assertCountEquals(0)
+        composeTestRule.onNodeWithText("▸ 2 tool calls").performClick()
+        composeTestRule.onAllNodesWithTag(CHAT_TOOL_TAG).assertCountEquals(2)
         composeTestRule.onNodeWithText("▸ Edit src/Settings.kt").performClick()
 
         composeTestRule.onNodeWithText("~/app/src/Settings.kt").assertExists()
         composeTestRule.onNodeWithText("▾ Edit src/Settings.kt").assertExists()
-        assertEquals(listOf(UsageActions.CHAT_TOOL), logged)
+        composeTestRule.onNodeWithText("▾ 2 tool calls").assertExists()
+        assertEquals(listOf(UsageActions.CHAT_TOOLS, UsageActions.CHAT_TOOL), logged)
+    }
+
+    @Test
+    fun aSingleToolCall_staysItsOwnRow() {
+        show(state(HerdrAgentStatus.IDLE).copy(items = items.take(3)))
+
+        composeTestRule.onAllNodesWithTag(CHAT_TOOLS_TAG).assertCountEquals(0)
+        composeTestRule.onNodeWithText("▸ Edit src/Settings.kt").assertExists()
+    }
+
+    @Test
+    fun userTurn_onTheRight_onTheGoldTint() {
+        show(state(HerdrAgentStatus.IDLE))
+
+        val bubble = composeTestRule.onNodeWithTag(CHAT_USER_TAG).getUnclippedBoundsInRoot()
+        val list = composeTestRule.onNodeWithTag(CHAT_LIST_TAG).getUnclippedBoundsInRoot()
+        assertTrue("bubble ${bubble.right} ends at the list's right ${list.right}", list.right - bubble.right <= 16.dp)
+        assertTrue("bubble ${bubble.left} leaves the left free", bubble.left - list.left >= 48.dp)
+    }
+
+    @Test
+    fun heading_isBoldAtBodySize_neverLarger() {
+        show(state(HerdrAgentStatus.IDLE).copy(items = listOf(ChatItem(ChatItem.AGENT, text = "## What changed\nThe toggle follows the system."))))
+
+        val heading = textStyleOf("What changed")
+        val body = textStyleOf("The toggle follows the system.")
+        assertEquals(body.fontSize, heading.fontSize)
+        assertEquals(16.sp, body.fontSize)
+        assertEquals(24.sp, body.lineHeight)
+        assertEquals(FontWeight.SemiBold, heading.fontWeight)
+    }
+
+    @Test
+    fun longReply_showsItsStart_andShowMoreShowsAll() {
+        val logged = mutableListOf<String>()
+        val long = (1..30).joinToString("\n\n") { "Paragraph $it of a long reply." }
+        show(state(HerdrAgentStatus.IDLE).copy(items = listOf(ChatItem(ChatItem.AGENT, text = long))), logged)
+
+        val cut = composeTestRule.onNodeWithTag(CHAT_AGENT_TAG).getUnclippedBoundsInRoot().let { it.bottom - it.top }
+        // Twelve 24sp lines and the key under them, not thirty paragraphs.
+        assertTrue("cut reply is $cut", cut < 24.dp * 12 + 80.dp)
+        composeTestRule.onNodeWithText("Show more").performClick()
+
+        composeTestRule.onAllNodesWithText("Show more").assertCountEquals(0)
+        val full = composeTestRule.onNodeWithTag(CHAT_AGENT_TAG).getUnclippedBoundsInRoot().let { it.bottom - it.top }
+        assertTrue("full reply $full over the cut $cut", full > cut * 2)
+        assertEquals(listOf(UsageActions.CHAT_MORE), logged)
+    }
+
+    @Test
+    fun shortReply_hasNoShowMore() {
+        show(state(HerdrAgentStatus.IDLE))
+
+        composeTestRule.onAllNodesWithText("Show more").assertCountEquals(0)
+    }
+
+    /** On a wide screen the reply stops at a reading measure: 55 to 75 characters a line, measured with Inter. */
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Config(qualifiers = "w900dp-h1200dp")
+    fun reply_onAWideScreen_keepsAReadingMeasure() {
+        val prose = "The settings screen reads the saved choice first and falls back to the system setting, " +
+            "so a fresh install looks the way the phone does until you pick a theme yourself. " +
+            "The failing test expected dark by default; it now checks both paths and the suite passes."
+        show(state(HerdrAgentStatus.IDLE).copy(items = listOf(ChatItem(ChatItem.AGENT, text = prose))))
+
+        val results = mutableListOf<TextLayoutResult>()
+        // The reply in the conversation, not its start on the pinned card.
+        composeTestRule.onNode(hasText(prose) and hasAnyAncestor(hasTestTag(CHAT_AGENT_TAG))).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
+        val layout = results.single()
+        val full = (0 until layout.lineCount - 1).map { layout.getLineEnd(it) - layout.getLineStart(it) }
+        assertTrue("lines $full", full.isNotEmpty() && full.all { it in 55..75 })
+    }
+
+    /** The text style [text] was laid out with. */
+    private fun textStyleOf(text: String): TextStyle {
+        val results = mutableListOf<TextLayoutResult>()
+        composeTestRule.onNodeWithText(text).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
+        return results.single().layoutInput.style
     }
 
     @Test

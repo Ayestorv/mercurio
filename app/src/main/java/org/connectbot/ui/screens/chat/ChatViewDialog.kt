@@ -32,8 +32,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,13 +67,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.window.Dialog
@@ -104,6 +112,8 @@ const val CHAT_LIST_TAG = "chat_list"
 const val CHAT_USER_TAG = "chat_user"
 const val CHAT_AGENT_TAG = "chat_agent"
 const val CHAT_TOOL_TAG = "chat_tool"
+const val CHAT_TOOLS_TAG = "chat_tools"
+const val CHAT_TURN_TAG = "chat_turn"
 const val CHAT_REPLY_TAG = "chat_reply"
 const val CHAT_WAITING_TAG = "chat_waiting"
 const val CHAT_ASK_TAG = "chat_ask"
@@ -114,12 +124,18 @@ internal val CHAT_DIALOG_PROPERTIES = DialogProperties(usePlatformDefaultWidth =
 // A user bubble leaves the left of the screen to the agent, like a messaging app.
 private val BUBBLE_MAX_WIDTH = 320.dp
 
+// An agent reply reads at about 75 characters a line at most (16sp Inter) on a wide screen.
+private val REPLY_MAX_WIDTH = 560.dp
+
+// A reply longer than this many lines shows its start and a Show more key.
+private const val REPLY_LINES = 12
+
 // The working card's elapsed time reads in minutes; this keeps it current.
 private const val ASK_TICK_MS = 15_000L
 
 /**
  * The agent conversation in [pane], or the pane focused when it opened, as a phone chat: your messages on the right,
- * the agent's replies on the left, each tool call one line that opens on a tap. Reads
+ * each agent turn under a hairline and its label, each run of tool calls one line that opens on a tap. Reads
  * while it is on screen (quick while the agent works, slower while it idles); the reply
  * box types into that pane, wherever Herdr's focus has moved since. [onOpenReader] shows the pane's raw
  * terminal output instead.
@@ -182,9 +198,10 @@ fun ChatContent(
     LaunchedEffect(state.unsent) {
         state.unsent?.let { if (reply.isBlank()) reply = it.text }
     }
-    // The rows around the messages: the "earlier not shown" note before, the empty note after.
+    // Each run of tool calls is one row; the rows around them: the "earlier not shown" note before, the empty note after.
+    val chatRows = remember(state.items) { ChatRow.of(state.items) }
     val lead = if (state.truncated) 1 else 0
-    val rows = lead + state.items.size + 1
+    val rows = lead + chatRows.size + 1
     val atBottom by remember {
         derivedStateOf {
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -240,7 +257,7 @@ fun ChatContent(
                     onAnswer = onAnswer,
                     onOpen = {
                         usage.log(UsageActions.CHAT_ASK)
-                        it.item?.let { item -> scope.launch { listState.animateScrollToItem(lead + item) } }
+                        it.item?.let { item -> scope.launch { listState.animateScrollToItem(lead + ChatRow.indexOf(chatRows, item)) } }
                     },
                 )
             }
@@ -270,11 +287,23 @@ fun ChatContent(
                     if (state.truncated) {
                         item { MicroLabel(stringResource(R.string.chat_earlier)) }
                     }
-                    itemsIndexed(state.items) { _, item ->
-                        when (item.k) {
-                            ChatItem.USER -> UserBubble(item.text)
-                            ChatItem.TOOL -> ToolRow(item, onOpen = { usage.log(UsageActions.CHAT_TOOL) })
-                            else -> AgentText(item.text)
+                    items(chatRows) { row ->
+                        val item = state.items[row.first]
+                        Column {
+                            if (row.turn) TurnLabel(state.target?.agent)
+                            when {
+                                item.isUser -> UserBubble(item.text)
+
+                                row.count > 1 -> ToolRun(
+                                    calls = state.items.subList(row.first, row.first + row.count),
+                                    onOpen = { usage.log(UsageActions.CHAT_TOOLS) },
+                                    onOpenCall = { usage.log(UsageActions.CHAT_TOOL) },
+                                )
+
+                                item.isTool -> ToolRow(item, onOpen = { usage.log(UsageActions.CHAT_TOOL) })
+
+                                else -> AgentText(item.text, onMore = { usage.log(UsageActions.CHAT_MORE) })
+                            }
                         }
                     }
                     item { EmptyRow(state) }
@@ -342,11 +371,27 @@ private fun MicroLabel(text: String, modifier: Modifier = Modifier, color: Color
     )
 }
 
+/** The start of an agent turn: a hairline across, then "/ CLAUDE". */
+@Composable
+private fun TurnLabel(agent: String?) {
+    Column(
+        modifier = Modifier
+            .padding(top = Ormus.spacing.md, bottom = Ormus.spacing.sm)
+            .testTag(CHAT_TURN_TAG),
+        verticalArrangement = Arrangement.spacedBy(Ormus.spacing.sm),
+    ) {
+        HorizontalDivider(color = Ormus.extras.hairline)
+        MicroLabel(agent ?: stringResource(R.string.chat_agent))
+    }
+}
+
+/** Your message: on the right, on the gold tint. */
 @Composable
 private fun UserBubble(text: String) {
     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSurface,
             shape = OrmusCornerShape,
             modifier = Modifier
                 .widthIn(max = BUBBLE_MAX_WIDTH)
@@ -364,50 +409,103 @@ private fun UserBubble(text: String) {
     }
 }
 
+/** An agent reply: body text at 16sp, headings bold at that size; past [REPLY_LINES] lines, its start and Show more. */
 @Composable
-private fun AgentText(text: String) {
+private fun AgentText(text: String, onMore: () -> Unit) {
     val blocks = remember(text) { ChatMarkdown.blocks(text) }
     val code = SpanStyle(fontFamily = OrmusMono, background = MaterialTheme.colorScheme.surfaceContainerHighest)
-    SelectionContainer(modifier = Modifier.testTag(CHAT_AGENT_TAG)) {
-        Column(verticalArrangement = Arrangement.spacedBy(Ormus.spacing.xs)) {
-            blocks.forEach { block ->
-                when (block) {
-                    is ChatBlock.Code -> Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainerLowest,
-                        shape = OrmusCornerShape,
+    val cap = with(LocalDensity.current) { (MaterialTheme.typography.bodyLarge.lineHeight * REPLY_LINES).toDp() }
+    var more by rememberSaveable(text) { mutableStateOf(false) }
+    CutToHeight(
+        cap = cap,
+        open = more,
+        more = {
+            OrmusKey(
+                label = stringResource(R.string.chat_more),
+                onClick = {
+                    onMore()
+                    more = true
+                },
+                contentPadding = WORD_KEY_PADDING,
+            )
+        },
+        modifier = Modifier
+            .widthIn(max = REPLY_MAX_WIDTH)
+            .testTag(CHAT_AGENT_TAG),
+    ) {
+        SelectionContainer { AgentBlocks(blocks, code) }
+    }
+}
+
+/**
+ * [content] cut to [cap] tall with [more] under it, when it is taller and not [open]; all of it
+ * otherwise. Decided in one layout pass, so the list it sits in does not jump a frame later.
+ */
+@Composable
+private fun CutToHeight(cap: Dp, open: Boolean, more: @Composable () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    SubcomposeLayout(modifier) { constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0, maxHeight = Constraints.Infinity)
+        val body = subcompose(CutPart.BODY) {
+            Box(Modifier.clipToBounds()) {
+                Box(Modifier.wrapContentHeight(Alignment.Top, unbounded = true)) { content() }
+            }
+        }.single()
+        val capPx = cap.roundToPx()
+        val cut = !open && body.maxIntrinsicHeight(constraints.maxWidth) > capPx
+        val shown = body.measure(if (cut) loose.copy(maxHeight = capPx) else loose)
+        val key = if (cut) subcompose(CutPart.MORE, more).map { it.measure(loose) } else emptyList()
+        val gap = if (cut) Ormus.spacing.xs.roundToPx() else 0
+        val width = (key.map { it.width } + shown.width).max().coerceIn(constraints.minWidth, constraints.maxWidth)
+        layout(width, shown.height + gap + key.sumOf { it.height }) {
+            shown.place(0, 0)
+            key.forEach { it.place(0, shown.height + gap) }
+        }
+    }
+}
+
+private enum class CutPart { BODY, MORE }
+
+@Composable
+private fun AgentBlocks(blocks: List<ChatBlock>, code: SpanStyle, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(Ormus.spacing.sm)) {
+        blocks.forEach { block ->
+            when (block) {
+                is ChatBlock.Code -> Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                    shape = OrmusCornerShape,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Ormus.extras.hairline, OrmusCornerShape),
+                ) {
+                    Text(
+                        block.text,
+                        fontFamily = OrmusMono,
+                        style = MaterialTheme.typography.bodySmall,
+                        softWrap = false,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, Ormus.extras.hairline, OrmusCornerShape),
-                    ) {
-                        Text(
-                            block.text,
-                            fontFamily = OrmusMono,
-                            style = MaterialTheme.typography.bodySmall,
-                            softWrap = false,
-                            modifier = Modifier
-                                .horizontalScroll(rememberScrollState())
-                                .padding(Ormus.spacing.sm),
-                        )
-                    }
-
-                    is ChatBlock.Heading -> Text(
-                        ChatMarkdown.inline(block.text, code),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
+                            .horizontalScroll(rememberScrollState())
+                            .padding(Ormus.spacing.sm),
                     )
-
-                    is ChatBlock.Item -> Row(modifier = Modifier.padding(start = Ormus.spacing.md * block.depth)) {
-                        Text(
-                            block.marker,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.widthIn(min = 20.dp),
-                        )
-                        Text(ChatMarkdown.inline(block.text, code), style = MaterialTheme.typography.bodyLarge)
-                    }
-
-                    is ChatBlock.Paragraph -> Text(ChatMarkdown.inline(block.text, code), style = MaterialTheme.typography.bodyLarge)
                 }
+
+                // Bold at body size: a heading never reads larger than the reply around it.
+                is ChatBlock.Heading -> Text(
+                    ChatMarkdown.inline(block.text, code),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+
+                is ChatBlock.Item -> Row(modifier = Modifier.padding(start = Ormus.spacing.md * block.depth)) {
+                    Text(
+                        block.marker,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.widthIn(min = 20.dp),
+                    )
+                    Text(ChatMarkdown.inline(block.text, code), style = MaterialTheme.typography.bodyLarge)
+                }
+
+                is ChatBlock.Paragraph -> Text(ChatMarkdown.inline(block.text, code), style = MaterialTheme.typography.bodyLarge)
             }
         }
     }
@@ -461,6 +559,53 @@ private fun ToolRow(item: ChatItem, onOpen: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = Ormus.spacing.xs),
                 )
+            }
+        }
+    }
+}
+
+/** A run of tool calls on one mono row, "5 tool calls"; a tap lists them, each opening on its own tap. */
+@Composable
+private fun ToolRun(calls: List<ChatItem>, onOpen: () -> Unit, onOpenCall: () -> Unit) {
+    var open by rememberSaveable(calls.first().line, calls.first().detail) { mutableStateOf(false) }
+    val state = when {
+        calls.last().state == "run" -> stringResource(R.string.chat_tool_running)
+        calls.any { it.state == "error" } -> stringResource(R.string.chat_tool_failed)
+        else -> null
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(Ormus.spacing.xs)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Ormus.extras.hairline, OrmusCornerShape)
+                .clickable {
+                    if (!open) onOpen()
+                    open = !open
+                }
+                .padding(horizontal = Ormus.spacing.sm, vertical = Ormus.spacing.xs)
+                .testTag(CHAT_TOOLS_TAG),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                (if (open) "▾ " else "▸ ") + pluralStringResource(R.plurals.chat_tool_calls, calls.size, calls.size),
+                fontFamily = OrmusMono,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            state?.let {
+                Text(
+                    it,
+                    fontFamily = OrmusMono,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(start = Ormus.spacing.sm),
+                )
+            }
+        }
+        if (open) {
+            calls.forEach { call ->
+                Box(modifier = Modifier.padding(start = Ormus.spacing.md)) { ToolRow(call, onOpen = onOpenCall) }
             }
         }
     }

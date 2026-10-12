@@ -49,6 +49,15 @@
 	<string name="chat_answer_failed">Could not answer: %1$s</string>
 	<!-- Agent chat: state of a tool call that reported an error -->
 	<string name="chat_tool_failed">failed</string>
+	<!-- Agent chat: the one row a run of tool calls folds into; %1$d is how many calls -->
+	<plurals name="chat_tool_calls">
+		<item quantity="one">%1$d tool call</item>
+		<item quantity="other">%1$d tool calls</item>
+	</plurals>
+	<!-- Agent chat: the key under a long agent reply that shows all of it -->
+	<string name="chat_more">Show more</string>
+	<!-- Agent chat: the label over an agent turn when the agent's name is not known -->
+	<string name="chat_agent">Agent</string>
 	<!-- Agent chat: state of a tool call that has no result yet -->
 	<string name="chat_tool_running">running</string>
 </resources>

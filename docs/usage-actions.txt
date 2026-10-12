@@ -55,6 +55,8 @@ chat:deny
 chat:tool
 chat:terminal
 chat:ask
+chat:tools
+chat:more
 diff:open
 herdr-sheet:diff
 diff:file

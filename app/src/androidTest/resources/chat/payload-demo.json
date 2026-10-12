@@ -37,7 +37,7 @@
   },
   {
    "k": "agent",
-   "text": "One test failed: the toggle's default. Fixed it and the suite is **green** now.\n\n- `darkMode` follows the system setting until you pick one\n- the choice is saved in `settings.json`\n\n```kotlin\nval dark = settings.dark ?: isSystemInDarkTheme()\n```"
+   "text": "## What changed\n\nOne test failed: the toggle's default. Fixed it and the suite is **green** now. The settings screen reads the saved choice first and falls back to the system setting, so a fresh install looks the way the phone does until you pick a theme yourself.\n\n- `darkMode` follows the system setting until you pick one\n- the choice is saved in `settings.json`\n- the preview card on the settings screen redraws as soon as you flip the toggle\n\n```kotlin\nval dark = settings.dark ?: isSystemInDarkTheme() // the saved choice wins over the system setting\n```\n\n### Tests\n\nThe failing test expected dark by default. It now checks both paths: no saved choice follows the system, and a saved choice wins. Two more tests cover the preview card and the saved file, and the whole suite passes on a clean build.\n\nI left the tablet layout alone; it uses the same settings screen and should pick up the toggle without changes."
   },
   {
    "k": "user",
