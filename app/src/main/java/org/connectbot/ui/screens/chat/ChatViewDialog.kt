@@ -57,8 +57,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -78,6 +80,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.connectbot.R
 import org.connectbot.service.TerminalBridge
 import org.connectbot.ui.components.KeyTone
@@ -88,6 +92,7 @@ import org.connectbot.ui.theme.OrmusCornerShape
 import org.connectbot.ui.theme.OrmusMono
 import org.connectbot.usage.LocalUsageLog
 import org.connectbot.usage.UsageActions
+import solutions.ormus.logos.herd.AgentsBoard
 import solutions.ormus.logos.herd.HerdAnswer
 import solutions.ormus.logos.herd.HerdAnswerOutcome
 import solutions.ormus.logos.herd.HerdApproval
@@ -101,12 +106,16 @@ const val CHAT_AGENT_TAG = "chat_agent"
 const val CHAT_TOOL_TAG = "chat_tool"
 const val CHAT_REPLY_TAG = "chat_reply"
 const val CHAT_WAITING_TAG = "chat_waiting"
+const val CHAT_ASK_TAG = "chat_ask"
 
 /** Full screen, drawn edge to edge: [ChatContent] keeps its own parts clear of the bars. */
 internal val CHAT_DIALOG_PROPERTIES = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
 
 // A user bubble leaves the left of the screen to the agent, like a messaging app.
 private val BUBBLE_MAX_WIDTH = 320.dp
+
+// The working card's elapsed time reads in minutes; this keeps it current.
+private const val ASK_TICK_MS = 15_000L
 
 /**
  * The agent conversation in [pane], or the pane focused when it opened, as a phone chat: your messages on the right,
@@ -166,7 +175,14 @@ fun ChatContent(
 ) {
     val usage = LocalUsageLog.current
     val listState = rememberLazyListState()
-    // The rows after the messages: the "earlier not shown" note before, the status after.
+    val scope = rememberCoroutineScope()
+    val ask = remember(state.target?.status, state.items, state.screen) { state.ask }
+    // The reply box keeps its text when it moves under the ask card and back.
+    var reply by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(state.unsent) {
+        state.unsent?.let { if (reply.isBlank()) reply = it.text }
+    }
+    // The rows around the messages: the "earlier not shown" note before, the empty note after.
     val lead = if (state.truncated) 1 else 0
     val rows = lead + state.items.size + 1
     val atBottom by remember {
@@ -204,6 +220,32 @@ fun ChatContent(
                     onOpenReader()
                 },
             )
+            val replyBar = @Composable {
+                ReplyBar(
+                    text = reply,
+                    onText = { reply = it },
+                    agent = state.target?.agent,
+                    enabled = state.target != null,
+                    primary = !state.blocked,
+                    onSend = { text ->
+                        usage.log(UsageActions.CHAT_SEND)
+                        onSend(text)
+                    },
+                )
+            }
+            ask?.let {
+                AskCard(
+                    ask = it,
+                    state = state,
+                    onAnswer = onAnswer,
+                    onOpen = {
+                        usage.log(UsageActions.CHAT_ASK)
+                        it.item?.let { item -> scope.launch { listState.animateScrollToItem(lead + item) } }
+                    },
+                )
+            }
+            // While the agent waits, the reply goes right under its question.
+            if (state.blocked) replyBar()
             state.problem?.let { problem -> ProblemLine(problem) }
             state.answer?.let { outcome -> AnswerLine(outcome) }
             state.unsent?.let { unsent -> UnsentLine(unsent) }
@@ -235,19 +277,10 @@ fun ChatContent(
                             else -> AgentText(item.text)
                         }
                     }
-                    item { StatusRow(state, onAnswer = onAnswer) }
+                    item { EmptyRow(state) }
                 }
             }
-            ReplyBar(
-                unsent = state.unsent,
-                agent = state.target?.agent,
-                enabled = state.target != null,
-                primary = !state.blocked,
-                onSend = { text ->
-                    usage.log(UsageActions.CHAT_SEND)
-                    onSend(text)
-                },
-            )
+            if (!state.blocked) replyBar()
         }
     }
 }
@@ -433,59 +466,109 @@ private fun ToolRow(item: ChatItem, onOpen: () -> Unit) {
     }
 }
 
-/** The end of the conversation: the agent is working, waiting for you (with Approve and Deny), or quiet. */
+/**
+ * The ask pinned under the header: a blocked agent's prompt with its options, Approve and
+ * Deny; what a working agent is doing and for how long; the start of a quiet agent's last
+ * reply. A tap scrolls the conversation to the turn it came from.
+ */
 @Composable
-private fun StatusRow(state: ChatUiState, onAnswer: (HerdAnswer) -> Unit) {
+private fun AskCard(ask: ChatAsk, state: ChatUiState, onAnswer: (HerdAnswer) -> Unit, onOpen: () -> Unit) {
     val usage = LocalUsageLog.current
     val target = state.target ?: return
-    if (target.status == HerdrAgentStatus.BLOCKED) {
-        val pending = state.items.lastOrNull()?.takeIf { it.isTool && it.state == "run" }
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            shape = OrmusCornerShape,
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, Ormus.extras.cardAccent, OrmusCornerShape)
-                .testTag(CHAT_WAITING_TAG),
-        ) {
-            Column(modifier = Modifier.padding(Ormus.spacing.md), verticalArrangement = Arrangement.spacedBy(Ormus.spacing.sm)) {
-                MicroLabel(stringResource(R.string.chat_waiting), color = Ormus.extras.status.blocked)
-                pending?.let { Text(it.line, fontFamily = OrmusMono, style = MaterialTheme.typography.bodySmall) }
-                if (target.agent in HerdApproval.PROVEN_KINDS) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Ormus.spacing.sm)) {
-                        OrmusKey(
-                            label = stringResource(R.string.chat_approve),
-                            onClick = {
-                                usage.log(UsageActions.CHAT_APPROVE)
-                                onAnswer(HerdAnswer.APPROVE)
-                            },
-                            tone = KeyTone.ON,
-                            contentPadding = WORD_KEY_PADDING,
+    val blocked = ask is ChatAsk.Blocked
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = OrmusCornerShape,
+        modifier = Modifier
+            .padding(horizontal = Ormus.spacing.md, vertical = Ormus.spacing.xs)
+            .fillMaxWidth()
+            .border(1.dp, if (blocked) Ormus.extras.cardAccent else Ormus.extras.hairline, OrmusCornerShape)
+            .clickable(enabled = ask.item != null, onClick = onOpen)
+            .testTag(if (blocked) CHAT_WAITING_TAG else CHAT_ASK_TAG),
+    ) {
+        Column(modifier = Modifier.padding(Ormus.spacing.md), verticalArrangement = Arrangement.spacedBy(Ormus.spacing.sm)) {
+            when (ask) {
+                is ChatAsk.Blocked -> {
+                    MicroLabel(stringResource(R.string.chat_waiting), color = Ormus.extras.status.blocked)
+                    val call = ask.item?.let { state.items.getOrNull(it) }?.takeIf { it.isTool }
+                    call?.let { Text(it.line, fontFamily = OrmusMono, style = MaterialTheme.typography.bodySmall) }
+                    if (ask.question.isNotEmpty() && ask.question != call?.line) {
+                        Text(ask.question, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                    }
+                    ask.options.forEach { option ->
+                        Text(option, fontFamily = OrmusMono, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (target.agent in HerdApproval.PROVEN_KINDS) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(Ormus.spacing.sm)) {
+                            OrmusKey(
+                                label = stringResource(R.string.chat_approve),
+                                onClick = {
+                                    usage.log(UsageActions.CHAT_APPROVE)
+                                    onAnswer(HerdAnswer.APPROVE)
+                                },
+                                tone = KeyTone.ON,
+                                contentPadding = WORD_KEY_PADDING,
+                            )
+                            OrmusKey(
+                                label = stringResource(R.string.chat_deny),
+                                onClick = {
+                                    usage.log(UsageActions.CHAT_DENY)
+                                    onAnswer(HerdAnswer.DENY)
+                                },
+                                contentPadding = WORD_KEY_PADDING,
+                            )
+                        }
+                    }
+                }
+
+                is ChatAsk.Working -> {
+                    // Ticks the elapsed time while the card is on screen.
+                    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+                    LaunchedEffect(state.since) {
+                        while (true) {
+                            now = System.currentTimeMillis()
+                            delay(ASK_TICK_MS)
+                        }
+                    }
+                    MicroLabel(stringResource(R.string.chat_working))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            stringResource(R.string.chat_working_line, ask.line),
+                            fontFamily = OrmusMono,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
                         )
-                        OrmusKey(
-                            label = stringResource(R.string.chat_deny),
-                            onClick = {
-                                usage.log(UsageActions.CHAT_DENY)
-                                onAnswer(HerdAnswer.DENY)
-                            },
-                            contentPadding = WORD_KEY_PADDING,
+                        Text(
+                            AgentsBoard.age(now - state.since),
+                            fontFamily = OrmusMono,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = Ormus.spacing.sm),
                         )
                     }
                 }
+
+                is ChatAsk.Quiet -> {
+                    MicroLabel(stringResource(if (target.status == HerdrAgentStatus.DONE) R.string.chat_done else R.string.chat_idle))
+                    Text(
+                        ask.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = ChatAsk.QUIET_LINES,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
-        return
     }
-    val label = when (target.status) {
-        HerdrAgentStatus.WORKING -> R.string.chat_working
-        HerdrAgentStatus.DONE -> R.string.chat_done
-        else -> R.string.chat_idle
-    }
-    Column {
-        if (state.items.isEmpty() && state.problem == null && !state.loading) {
-            Text(stringResource(R.string.chat_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        MicroLabel(stringResource(label), modifier = Modifier.padding(vertical = Ormus.spacing.xs))
+}
+
+/** The conversation's end: says so when there are no messages yet. */
+@Composable
+private fun EmptyRow(state: ChatUiState) {
+    if (state.target != null && state.items.isEmpty() && state.problem == null && !state.loading) {
+        Text(stringResource(R.string.chat_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -535,15 +618,11 @@ private fun UnsentLine(unsent: ChatUnsent) {
 
 /** The reply box: what you type goes into the agent's pane, then Enter. A reply that was not sent comes back. */
 @Composable
-private fun ReplyBar(unsent: ChatUnsent?, agent: String?, enabled: Boolean, primary: Boolean, onSend: (String) -> Unit) {
-    var text by rememberSaveable { mutableStateOf("") }
-    LaunchedEffect(unsent) {
-        if (unsent != null && text.isBlank()) text = unsent.text
-    }
+private fun ReplyBar(text: String, onText: (String) -> Unit, agent: String?, enabled: Boolean, primary: Boolean, onSend: (String) -> Unit) {
     fun send() {
         if (text.isBlank()) return
         onSend(text)
-        text = ""
+        onText("")
     }
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -553,7 +632,7 @@ private fun ReplyBar(unsent: ChatUnsent?, agent: String?, enabled: Boolean, prim
         ) {
             TextField(
                 value = text,
-                onValueChange = { text = it },
+                onValueChange = onText,
                 enabled = enabled,
                 placeholder = { Text(stringResource(R.string.chat_reply_hint, agent ?: ""), maxLines = 1) },
                 maxLines = 5,

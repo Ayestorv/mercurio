@@ -34,6 +34,7 @@ import org.connectbot.di.CoroutineDispatchers
 import org.connectbot.service.TerminalBridge
 import org.connectbot.transport.CommandOutput
 import org.connectbot.transport.SSH
+import solutions.ormus.logos.herd.AgentsBoard
 import solutions.ormus.logos.herd.HerdAnswer
 import solutions.ormus.logos.herd.HerdAnswerOutcome
 import solutions.ormus.logos.herd.HerdrAgentStatus
@@ -70,7 +71,14 @@ data class ChatUiState(
     val answer: HerdAnswerOutcome? = null,
     /** The last reply that was not sent, to put back in the reply box. */
     val unsent: ChatUnsent? = null,
+    /** The pane's last lines, read while the agent is blocked: its prompt may be drawn only there. */
+    val screen: String? = null,
+    /** When the chat saw the agent's state change to the one it is in, in wall-clock ms. */
+    val since: Long = 0,
 ) {
+    /** What the chat pins at its top. */
+    val ask: ChatAsk? get() = ChatAsk.of(target?.status, items, screen)
+
     val blocked: Boolean get() = target?.status == HerdrAgentStatus.BLOCKED
     val working: Boolean get() = target?.status == HerdrAgentStatus.WORKING
 }
@@ -85,6 +93,9 @@ interface ChatHost {
 
     /** Run [command] over an exec channel. Blocking; null when it never ran. */
     fun exec(command: String): CommandOutput?
+
+    /** The last lines on [paneId]'s screen. Blocking; null when the read failed. */
+    fun screen(paneId: String): String? = null
 
     /** Approve or deny the blocked agent in [paneId]. */
     suspend fun answer(paneId: String, answer: HerdAnswer): HerdAnswerOutcome
@@ -112,6 +123,9 @@ class ChatViewModel @Inject constructor(
     private var knownSession: String? = null
     private var knownSize = -1L
     private var unsentSeq = 0
+
+    /** Wall-clock ms; a test sets its own. */
+    internal var clock: () -> Long = System::currentTimeMillis
 
     private val reading = Mutex()
     private val wake = Channel<Unit>(Channel.CONFLATED)
@@ -204,7 +218,10 @@ class ChatViewModel @Inject constructor(
             knownSize = -1
         }
         val sameSession = state.target?.let { it.agent + ":" + it.sessionId } == session
-        val base = if (sameSession) done.copy(target = target) else done.copy(target = target, items = emptyList(), truncated = false)
+        val since = if (state.target?.status == target.status) state.since else clock()
+        val screen = if (target.status == HerdrAgentStatus.BLOCKED) host.screen(target.paneId) else null
+        val base = (if (sameSession) done.copy(target = target) else done.copy(target = target, items = emptyList(), truncated = false))
+            .copy(screen = screen, since = since)
         val command = AgentChat.command(target.agent, target.sessionId, knownSize) ?: return base.copy(problem = ChatProblem.NotAgent)
         val out = try {
             host.exec(command)
@@ -258,6 +275,8 @@ class BridgeChatHost(private val bridge: TerminalBridge, override val session: S
     }
 
     override fun exec(command: String): CommandOutput? = (bridge.transport as? SSH)?.execDetailed(command)
+
+    override fun screen(paneId: String): String? = exec(AgentsBoard.readCommand(session, paneId))?.takeIf { it.exitCode == null || it.exitCode == 0 }?.stdout
 
     override suspend fun answer(paneId: String, answer: HerdAnswer): HerdAnswerOutcome = bridge.herd?.answer(paneId, answer, session) ?: HerdAnswerOutcome.Failed("Herdr is not up in this session")
 }

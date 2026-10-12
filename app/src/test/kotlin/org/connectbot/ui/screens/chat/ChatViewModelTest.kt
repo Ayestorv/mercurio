@@ -91,6 +91,14 @@ class ChatViewModelTest {
         val reads: List<String> get() = commands.filter { "MERCURIO_CHAT" in it }
 
         override suspend fun answer(paneId: String, answer: HerdAnswer) = HerdAnswerOutcome.NotBlocked
+
+        var screenText: String? = "Do you want to proceed?\n❯ 1. Yes\n  2. No"
+        val screens = mutableListOf<String>()
+
+        override fun screen(paneId: String): String? {
+            screens += paneId
+            return screenText
+        }
     }
 
     @Test
@@ -213,6 +221,31 @@ class ChatViewModelTest {
         assertEquals(ChatProblem.PaneGone, viewModel.uiState.value.problem)
         assertNull(viewModel.uiState.value.target)
         assertEquals(listOf("hi"), viewModel.uiState.value.items.map { it.text })
+    }
+
+    @Test
+    fun load_readsTheScreenOnlyWhileBlocked_andTimesTheState() = runTest(testDispatcher) {
+        val host = FakeHost(HerdrAgentStatus.WORKING)
+        val viewModel = ChatViewModel(dispatchers)
+        var now = 1_000L
+        viewModel.clock = { now }
+        viewModel.open()
+
+        viewModel.load(host, fresh = true)
+        assertEquals(emptyList<String>(), host.screens)
+        assertNull(viewModel.uiState.value.screen)
+        assertEquals(1_000L, viewModel.uiState.value.since)
+
+        // Still working later: the time it started stays.
+        now = 5_000L
+        viewModel.load(host, fresh = false)
+        assertEquals(1_000L, viewModel.uiState.value.since)
+
+        host.status = HerdrAgentStatus.BLOCKED
+        viewModel.load(host, fresh = false)
+        assertEquals(listOf("w1:p1"), host.screens)
+        assertEquals(5_000L, viewModel.uiState.value.since)
+        assertEquals(ChatAsk.Blocked("Do you want to proceed?", listOf("1. Yes", "2. No"), 0), viewModel.uiState.value.ask)
     }
 
     @Test

@@ -33,7 +33,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
-import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -137,11 +136,11 @@ class ChatContentTest {
         val answers = mutableListOf<HerdAnswer>()
         show(state(HerdrAgentStatus.BLOCKED), logged, answers = answers)
 
-        composeTestRule.onNodeWithTag(CHAT_LIST_TAG).performScrollToNode(hasTestTag(CHAT_WAITING_TAG))
         composeTestRule.onNode(
             hasTestTag(CHAT_WAITING_TAG) and
                 hasAnyDescendant(hasText("/ WAITING FOR YOU")) and
                 hasAnyDescendant(hasText("Bash: ./gradlew test")),
+            useUnmergedTree = true,
         ).assertExists()
         composeTestRule.onNodeWithText("Approve").performClick()
         composeTestRule.onNodeWithText("Deny").performClick()
@@ -151,10 +150,56 @@ class ChatContentTest {
     }
 
     @Test
+    fun blocked_pinsThePromptOnTop_withTheReplyRightUnderIt() {
+        val screen = "Do you want to proceed?\n❯ 1. Yes\n  2. No, and tell Claude what to do differently (esc)"
+        show(state(HerdrAgentStatus.BLOCKED).copy(screen = screen))
+
+        composeTestRule.onNode(
+            hasTestTag(CHAT_WAITING_TAG) and
+                hasAnyDescendant(hasText("Do you want to proceed?")) and
+                hasAnyDescendant(hasText("1. Yes")) and
+                hasAnyDescendant(hasText("2. No, and tell Claude what to do differently (esc)")),
+            useUnmergedTree = true,
+        ).assertExists()
+        val card = composeTestRule.onNodeWithTag(CHAT_WAITING_TAG).getUnclippedBoundsInRoot()
+        val reply = composeTestRule.onNodeWithTag(CHAT_REPLY_TAG).getUnclippedBoundsInRoot()
+        val list = composeTestRule.onNodeWithTag(CHAT_LIST_TAG).getUnclippedBoundsInRoot()
+        assertTrue("reply ${reply.top} under the card ${card.bottom}", reply.top >= card.bottom)
+        assertTrue("reply ${reply.bottom} above the conversation ${list.top}", reply.bottom <= list.top)
+    }
+
+    @Test
+    fun working_pinsTheRunningCall_andTheReplyStaysAtTheBottom() {
+        show(state(HerdrAgentStatus.WORKING))
+
+        composeTestRule.onNode(hasTestTag(CHAT_ASK_TAG) and hasAnyDescendant(hasText("Working: Bash: ./gradlew test")), useUnmergedTree = true).assertExists()
+        val reply = composeTestRule.onNodeWithTag(CHAT_REPLY_TAG).getUnclippedBoundsInRoot()
+        val list = composeTestRule.onNodeWithTag(CHAT_LIST_TAG).getUnclippedBoundsInRoot()
+        assertTrue("reply ${reply.top} under the conversation ${list.bottom}", reply.top >= list.bottom)
+    }
+
+    @Test
+    fun done_pinsTheLastReply_andATapScrollsToIt() {
+        val logged = mutableListOf<String>()
+        val long = (1..40).map { ChatItem(ChatItem.USER, text = "message $it") }
+        val items = listOf(ChatItem(ChatItem.AGENT, text = "Settled on the system setting.\nTests pass.")) + long
+        show(state(HerdrAgentStatus.DONE).copy(items = items), logged)
+
+        composeTestRule.onNode(hasTestTag(CHAT_ASK_TAG) and hasAnyDescendant(hasText("/ DONE")), useUnmergedTree = true).assertExists()
+        // The conversation follows its newest message: the reply is off screen until the card is tapped.
+        composeTestRule.onAllNodesWithTag(CHAT_AGENT_TAG).assertCountEquals(0)
+        composeTestRule.onNodeWithTag(CHAT_ASK_TAG).performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onAllNodesWithTag(CHAT_AGENT_TAG).assertCountEquals(1)
+        assertEquals(listOf(UsageActions.CHAT_ASK), logged)
+    }
+
+    @Test
     fun blocked_unprovenAgent_waitsWithoutAnswers() {
         show(state(HerdrAgentStatus.BLOCKED).let { it.copy(target = it.target?.copy(agent = "pi")) })
 
-        composeTestRule.onNodeWithTag(CHAT_LIST_TAG).performScrollToNode(hasTestTag(CHAT_WAITING_TAG))
+        composeTestRule.onNodeWithTag(CHAT_WAITING_TAG).assertExists()
         composeTestRule.onAllNodesWithText("Approve").assertCountEquals(0)
     }
 

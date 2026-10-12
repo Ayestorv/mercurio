@@ -17,17 +17,18 @@
 
 package org.connectbot.ui.screens.chat
 
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.ViewCompat
@@ -55,6 +56,9 @@ class ChatScreenshotTest {
         AgentChat.parse(checkNotNull(javaClass.getResourceAsStream("/chat/payload-demo.json")).readBytes().decodeToString()),
     )
 
+    // The view the chat is drawn in: the dialog's window when it is in one.
+    private var chatView: View? = null
+
     private fun screencap(name: String) {
         composeTestRule.waitForIdle()
         // Let the first frame reach the display before capturing it.
@@ -67,15 +71,18 @@ class ChatScreenshotTest {
     }
 
     // The test activity draws edge to edge, as the chat dialog does.
-    private fun show(status: HerdrAgentStatus, inDialog: Boolean = false) {
+    private fun show(status: HerdrAgentStatus, inDialog: Boolean = false, screen: String? = null) {
         val state = ChatUiState(
             target = ChatTarget(paneId = "w1:p1", agent = "claude", sessionId = "demo", status = status, title = "Dark mode toggle", place = "Demo / app"),
             items = payload.items,
             truncated = payload.truncated,
+            screen = screen,
+            since = System.currentTimeMillis() - 3 * 60_000,
         )
         composeTestRule.setContent {
             ConnectBotTheme {
                 val chat = @Composable {
+                    chatView = LocalView.current
                     ChatContent(
                         state = state,
                         fallbackTitle = "Demo",
@@ -99,9 +106,31 @@ class ChatScreenshotTest {
 
     @Test
     fun waitingForYou() {
-        show(HerdrAgentStatus.BLOCKED)
-        composeTestRule.onNodeWithTag(CHAT_LIST_TAG).performScrollToNode(hasTestTag(CHAT_WAITING_TAG))
+        show(HerdrAgentStatus.BLOCKED, inDialog = true, screen = PERMISSION_SCREEN)
+        composeTestRule.onNodeWithText("Do you want to proceed?").assertExists()
         screencap("chat-waiting")
+    }
+
+    /** The reply box with the keyboard up: it sits above the keyboard, not under it. */
+    @Test
+    fun replyAboveTheKeyboard() {
+        show(HerdrAgentStatus.IDLE, inDialog = true)
+        composeTestRule.onNodeWithTag(CHAT_REPLY_TAG).performClick()
+        composeTestRule.waitUntil(KEYBOARD_TIMEOUT_MS) { imeTop() != null }
+        composeTestRule.waitForIdle()
+        Thread.sleep(SCREENCAP_SETTLE_MS)
+        val reply = composeTestRule.onNodeWithTag(CHAT_REPLY_TAG).fetchSemanticsNode().boundsInWindow
+        val ime = checkNotNull(imeTop())
+        assertTrue("reply bottom ${reply.bottom} px is over the keyboard top $ime px", reply.bottom <= ime)
+        screencap("chat-keyboard")
+    }
+
+    /** The keyboard's top edge in the chat dialog's window, in pixels; null while it is hidden. */
+    private fun imeTop(): Int? {
+        val view = chatView?.rootView ?: return null
+        val insets = ViewCompat.getRootWindowInsets(view) ?: return null
+        val bottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+        return if (bottom > 0) view.height - bottom else null
     }
 
     /** The status bar's height on this device, in pixels. */
@@ -141,5 +170,17 @@ class ChatScreenshotTest {
 
     private companion object {
         const val SCREENCAP_SETTLE_MS = 1500L
+        const val KEYBOARD_TIMEOUT_MS = 10_000L
+
+        // A synthetic Claude Code permission prompt, as the pane's last lines show it.
+        val PERMISSION_SCREEN = """
+            Bash command
+              ./gradlew testDebugUnitTest
+              Run the unit tests
+            Do you want to proceed?
+            ❯ 1. Yes
+              2. Yes, and don't ask again for ./gradlew commands
+              3. No, and tell Claude what to do differently (esc)
+        """.trimIndent()
     }
 }

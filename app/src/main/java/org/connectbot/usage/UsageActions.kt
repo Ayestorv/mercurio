@@ -93,7 +93,8 @@ object UsageActions {
 
     // Agent chat: opened from the Herdr panel's Chat key or the Read key on an agent pane
     // (that key also logs reader:open), then closed, read again, a reply sent, Approve or
-    // Deny, a tool row opened, the raw terminal output asked for. Never the reply's text.
+    // Deny, a tool row opened, the raw terminal output asked for, the pinned ask tapped.
+    // Never the reply's text.
     const val CHAT_OPEN = "chat:open"
     const val CHAT_CLOSE = "chat:close"
     const val CHAT_REFRESH = "chat:refresh"
@@ -102,6 +103,7 @@ object UsageActions {
     const val CHAT_DENY = "chat:deny"
     const val CHAT_TOOL = "chat:tool"
     const val CHAT_TERMINAL = "chat:terminal"
+    const val CHAT_ASK = "chat:ask"
 
     // Diff viewer: opened from the console menu or the Herdr panel's Diff key.
     const val DIFF_OPEN = "diff:open"
@@ -348,7 +350,7 @@ object UsageActions {
         HERDR_PGUP, HERDR_PGDN, HERDR_DONE,
         READER_OPEN, READER_CLOSE, READER_REFRESH, READER_TOP, READER_PGUP, READER_PGDN,
         READER_BOTTOM, READER_TEXT_SMALLER, READER_TEXT_LARGER,
-        CHAT_OPEN, CHAT_CLOSE, CHAT_REFRESH, CHAT_SEND, CHAT_APPROVE, CHAT_DENY, CHAT_TOOL, CHAT_TERMINAL,
+        CHAT_OPEN, CHAT_CLOSE, CHAT_REFRESH, CHAT_SEND, CHAT_APPROVE, CHAT_DENY, CHAT_TOOL, CHAT_TERMINAL, CHAT_ASK,
         DIFF_OPEN, HERDR_SHEET_DIFF, DIFF_FILE, DIFF_BACK, DIFF_DIR, DIFF_REFRESH, DIFF_CLOSE,
         DRAWER_OPEN, DRAWER_SWITCH, DRAWER_DISCONNECT, DRAWER_QUICK_CONNECT, DRAWER_HOST_LIST,
         MACHINES_CONNECT, MACHINES_REFRESH, MACHINES_FIX_PROMPT,
