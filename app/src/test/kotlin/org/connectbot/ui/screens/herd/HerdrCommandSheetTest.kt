@@ -71,6 +71,7 @@ import solutions.ormus.logos.herd.HerdrAction
 import solutions.ormus.logos.herd.HerdrDirection
 import solutions.ormus.logos.herd.HerdrPrefix
 import solutions.ormus.logos.herd.HerdrSessionSnapshot
+import solutions.ormus.logos.herd.HerdrSessions
 import solutions.ormus.logos.herd.HerdrTabInfo
 
 /**
@@ -92,6 +93,10 @@ class HerdrCommandSheetTest {
     private val keys = mutableListOf<String>()
     private var answer: (String) -> CommandOutput = { CommandOutput("""{"id":"cli","result":{}}""", "", 0) }
 
+    // The host's running Herdr sessions; a test adds "work" (three workspaces, one tab each).
+    private var sessionList = """{"sessions":[{"name":"default","running":true}]}"""
+    private val work = checkNotNull(javaClass.getResourceAsStream("/herdr/snapshot-picker-test.json")).readBytes().decodeToString()
+
     private val session = HerdSession(
         hostName = "Sun",
         runner = { command ->
@@ -99,6 +104,10 @@ class HerdrCommandSheetTest {
                 CommandOutput(fixture, "", 0)
             } else if (command == HerdrPrefix.readCommand) {
                 CommandOutput(sunConfig, "", 0)
+            } else if (command == HerdrSessions.listCommand) {
+                CommandOutput(sessionList, "", 0)
+            } else if (command == HerdrSessions.snapshotCommand("work")) {
+                CommandOutput(work, "", 0)
             } else {
                 ran += command
                 answer(command)
@@ -197,6 +206,67 @@ class HerdrCommandSheetTest {
             tabKeys().assertCountEquals(7)
         }
         for (i in 0 until 7) tabKeys()[i].assertTextEquals((i + 1).toString())
+    }
+
+    @Test
+    fun sessionRow_hiddenWhileTheHostRunsOneSession() {
+        show()
+
+        composeTestRule.onAllNodesWithTag(HERDR_SESSION_ROW_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun sessionRow_pickingASessionRunsTheActionsThere() {
+        sessionList = """{"sessions":[{"name":"default","running":true},{"name":"work","running":true},{"name":"old","running":false}]}"""
+        val logged = mutableListOf<String>()
+        composeTestRule.setContent {
+            CompositionLocalProvider(LocalUsageLog provides UsageLog { logged += it }) {
+                Panel()
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        val sessionKey = { name: String -> composeTestRule.onNode(hasText(name) and hasAnyAncestor(hasTestTag(HERDR_SESSION_ROW_TAG))) }
+        sessionKey("default").assertIsSelected()
+        sessionKey("work").assertIsNotSelected()
+        composeTestRule.onAllNodesWithText("old").assertCountEquals(0)
+
+        sessionKey("work").performClick()
+        composeTestRule.waitForIdle()
+        sessionKey("work").assertIsSelected()
+        // Work's focused workspace has one tab, so no tab row; its workspaces are the jump list.
+        composeTestRule.onAllNodesWithTag(HERDR_TAB_ROW_TAG).assertCountEquals(0)
+        tap("New tab")
+        assertEquals("herdr --session 'work' tab create --workspace 'w1' --focus", lastRun())
+        group("Spaces")
+        composeTestRule.onNodeWithText("3 · gamma").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        assertEquals("herdr --session 'work' workspace focus 'w3'", lastRun())
+
+        assertEquals(UsageActions.HERDR_SHEET_SESSION, logged.first())
+        assertEquals(listOf(UsageActions.HERDR_SHEET_NEW_TAB, UsageActions.HERDR_SHEET_JUMP_WORKSPACE), logged.drop(1))
+    }
+
+    @Test
+    fun tabsGroup_leadsWithJumpTo_whenThePanelCanOpenIt() {
+        var opened = 0
+        composeTestRule.setContent {
+            var section by remember { mutableStateOf(HerdrSection.TABS) }
+            HerdrCommandPanel(session = session, section = section, onSection = { section = it }, store = store, onJumpTo = { opened++ })
+        }
+        composeTestRule.waitForIdle()
+
+        inGroup("Jump to…").performScrollTo().performClick()
+        assertEquals(1, opened)
+        assertTrue("opening Jump to runs nothing on the host", ran.isEmpty())
+    }
+
+    @Test
+    fun tabsGroup_noJumpToKeyWithoutIt() {
+        show()
+
+        group("Tabs")
+        composeTestRule.onAllNodesWithText("Jump to…").assertCountEquals(0)
     }
 
     @Test
@@ -315,7 +385,7 @@ class HerdrCommandSheetTest {
         show()
 
         val expected = linkedMapOf(
-            "Next waiting agent" to "herdr agent focus 'w1:pJ'",
+            "Next waiting agent" to "herdr tab focus 'w1:tJ' && herdr agent focus 'w1:pJ'",
             "Start claude" to "herdr agent start 'claude-w1-p1' --kind 'claude' --pane 'w1:p1' --timeout 12000",
             "Start codex" to "herdr agent start 'codex-w1-p1' --kind 'codex' --pane 'w1:p1' --timeout 12000",
             "Start grok" to "herdr agent start 'grok-w1-p1' --kind 'grok' --pane 'w1:p1' --timeout 12000",

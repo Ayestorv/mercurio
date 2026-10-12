@@ -46,19 +46,30 @@ class HerdrCommandsTest {
     @Test
     fun agents() {
         // Newest blocked agent first (w1:pJ, seq 10), skipping the focused pane.
-        assertRuns("herdr agent focus 'w1:pJ'", HerdrAction.FocusNextBlocked)
+        assertRuns("herdr tab focus 'w1:tJ' && herdr agent focus 'w1:pJ'", HerdrAction.FocusNextBlocked)
         assertRuns("herdr agent start 'claude-w1-p1' --kind 'claude' --pane 'w1:p1' --timeout 12000", HerdrAction.StartAgent("claude"))
         assertRuns("herdr agent start 'codex-w1-p1' --kind 'codex' --pane 'w1:p1' --timeout 12000", HerdrAction.StartAgent("codex"))
         assertRuns("herdr agent start 'grok-w1-p1' --kind 'grok' --pane 'w1:p1' --timeout 12000", HerdrAction.StartAgent("grok"))
         assertRuns("herdr agent explain 'w1:p1'", HerdrAction.ExplainDetection)
-        assertRuns("herdr agent focus 'w1:pH'", HerdrAction.FocusAgent("w1:pH"))
+        assertRuns("herdr tab focus 'w1:tH' && herdr agent focus 'w1:pH'", HerdrAction.FocusAgent("w1:pH"))
+    }
+
+    @Test
+    fun focusAgent_focusesItsTabFirst_soAnAttachedClientFollows() {
+        // In another session the same pair runs there.
+        val work = (HerdrSessions.commands("work").build(HerdrAction.FocusAgent("w1:pC"), snapshot) as HerdrInvocation.Cli).command
+        assertEquals("herdr --session 'work' tab focus 'w1:tC' && herdr --session 'work' agent focus 'w1:pC'", inner(work))
+        // A pane the snapshot does not know: the agent focus alone.
+        assertRuns("herdr agent focus 'w9:p9'", HerdrAction.FocusAgent("w9:p9"))
+        val none = (commands.build(HerdrAction.FocusAgent("w1:pC"), null) as HerdrInvocation.Cli).command
+        assertEquals("herdr agent focus 'w1:pC'", inner(none))
     }
 
     @Test
     fun focusNextBlocked_walksToTheOtherBlockedAgent() {
         val onFirst = snapshot.copy(focusedPaneId = "w1:pJ")
         val command = (commands.build(HerdrAction.FocusNextBlocked, onFirst) as HerdrInvocation.Cli).command
-        assertEquals("herdr agent focus 'w1:pC'", inner(command))
+        assertEquals("herdr tab focus 'w1:tC' && herdr agent focus 'w1:pC'", inner(command))
     }
 
     @Test

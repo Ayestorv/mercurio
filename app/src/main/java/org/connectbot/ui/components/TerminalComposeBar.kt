@@ -98,7 +98,10 @@ import org.connectbot.R
 import org.connectbot.service.TerminalBridge
 import org.connectbot.ui.components.ormusPanelTop
 import org.connectbot.ui.screens.herd.HerdrCommandPanel
+import org.connectbot.ui.screens.herd.HerdrJumpPicker
 import org.connectbot.ui.screens.herd.HerdrSection
+import org.connectbot.ui.screens.herd.boardNeedsYou
+import org.connectbot.ui.screens.herd.boardSnapshots
 import org.connectbot.ui.screens.reader.LastReply
 import org.connectbot.ui.screens.reader.RecentOutput
 import org.connectbot.ui.theme.Ormus
@@ -107,6 +110,7 @@ import org.connectbot.ui.theme.OrmusMono
 import org.connectbot.usage.LocalUsageLog
 import org.connectbot.usage.UsageActions
 import org.connectbot.util.LatestUrl
+import solutions.ormus.logos.herd.AgentsBoard
 import solutions.ormus.logos.herd.Herd
 import solutions.ormus.logos.herd.HerdrKey
 import solutions.ormus.logos.herd.HerdrKeys
@@ -386,8 +390,10 @@ private fun ReadKey(
  * Herdr: its post-login command launches it, or a Herdr snapshot answers on the host.
  *
  * Two rows, always visible:
- * 1. ↑ and ↓, which page (Page Up and Page Down, hold to repeat), Herdr, ⋯, then the tab
- *    switchers ← and → (Previous tab, Next tab), above ⏎.
+ * 1. ↑ and ↓, which page (Page Up and Page Down, hold to repeat), Herdr, ⋯, then Needs you
+ *    above ⏎: a tap jumps to the next agent waiting for the user, in any Herdr session on
+ *    the host, cycling; with none waiting, or on a long press, it opens the Agents board
+ *    ([onBoard]). Gold while an agent waits.
  * 2. Esc, Tab, the dictation field and ⏎. The field takes whatever width is left. ⏎
  *    is Send and Enter in one key: it sends the field's text, then Enter, or a bare
  *    Enter when the field is empty. Dictation comes from the phone's own overlay
@@ -400,7 +406,7 @@ private fun ReadKey(
  *    agent's last reply, paste screenshot, Sidebar (shows
  *    or hides Herdr's side panel), then / ([onSlashMenu], the agent slash-command
  *    menu, shown only when set).
- * Herdr's Needs you, Goto and copy mode live in the Herdr panel.
+ * Herdr's own Needs you key, Goto, copy mode and Jump to live in the Herdr panel.
  *
  * The tray takes its own height above the bar, so the terminal moves up while it is
  * open instead of sitting under it. Every tray key is two taps away. The tray stays
@@ -424,6 +430,12 @@ fun TerminalComposeBar(
     herdrPanelOpen: Boolean = false,
     onHerdrPanelChange: ((Boolean) -> Unit)? = null,
     onSlashMenu: (() -> Unit)? = null,
+    /** Opens the agent chat from the Herdr panel's Chat key. */
+    onChat: (() -> Unit)? = null,
+    /** Opens the Agents board, from the Herdr panel's Board key or the Needs you key. */
+    onBoard: (() -> Unit)? = null,
+    /** The Herdr panel's Diff key: open the diff viewer. */
+    onDiff: (() -> Unit)? = null,
     draft: DictationDraft = remember { DictationDraft() },
     /** The session's recent output as plain text, for the URL key (blocking work off main). */
     readRecentOutput: suspend () -> String = { withContext(Dispatchers.IO) { RecentOutput.read(bridge).text } },
@@ -513,11 +525,51 @@ fun TerminalComposeBar(
     var herdrSection by rememberSaveable(bridge) { mutableStateOf(HerdrSection.AGENTS) }
     val herdrPanel = herdrPanelOpen && bridge.herd != null && herdrSession
 
+    // Needs you: the agents waiting for the user in every session the Herdr side holds a
+    // snapshot of (the Agents board's count). The default and the attached session are polled;
+    // the others are as fresh as the last time the board or Jump to read them.
+    val herdrSessions by (bridge.herd?.sessions ?: NO_HERDR_SESSIONS).collectAsState()
+    val herdrOthers by (bridge.herd?.others ?: NO_HERDR_OTHERS).collectAsState()
+    val needsYou = boardNeedsYou(herdrLive, herdrOthers, herdrSessions)
+
+    fun openBoard() {
+        if (bridge.herd == null || !herdrSession || onBoard == null) return
+        usage.log(UsageActions.NEEDS_YOU_BOARD)
+        onBoard()
+    }
+
+    // The next waiting agent after the attached session's focus, by the board's jump path
+    // (focus its pane, attach its session when it is another); the board when none waits.
+    fun jumpToNeedsYou() {
+        val herd = bridge.herd ?: return
+        if (!herdrSession) return
+        val target = AgentsBoard.nextNeedsYou(boardSnapshots(herd.snapshot.value, herd.others.value, herd.sessions.value), herd.attached.value)
+        if (target == null) {
+            openBoard()
+            return
+        }
+        usage.log(UsageActions.NEEDS_YOU_JUMP)
+        bridge.jumpToHerdrTab(target.jumpTarget(), target.paneId)?.let { why -> Toast.makeText(context, why, Toast.LENGTH_LONG).show() }
+    }
+
+    // Jump to (every tab of every Herdr session) sits where the panel and the tray do.
+    var herdrJumpOpen by remember(bridge) { mutableStateOf(false) }
+    val herdrJump = herdrJumpOpen && bridge.herd != null && herdrSession
+
     fun openTray(actionId: String) {
         if (trayOpen) return
         usage.log(actionId)
         if (herdrPanel) onHerdrPanelChange?.invoke(false)
+        herdrJumpOpen = false
         trayOpen = true
+    }
+
+    fun openHerdrJump(actionId: String) {
+        if (bridge.herd == null || !herdrSession) return
+        usage.log(actionId)
+        trayOpen = false
+        if (herdrPanel) onHerdrPanelChange?.invoke(false)
+        herdrJumpOpen = true
     }
 
     // Herdr sends Herdr's prefix at once and opens the panel, so a panel key
@@ -530,6 +582,7 @@ fun TerminalComposeBar(
         }
         usage.log(UsageActions.HERDR_SHEET_OPEN)
         trayOpen = false
+        herdrJumpOpen = false
         bridge.herd?.armPrefix()
         onHerdrPanelChange?.invoke(true)
     }
@@ -542,6 +595,7 @@ fun TerminalComposeBar(
 
     BackHandler(enabled = trayOpen) { closeTray() }
     BackHandler(enabled = herdrPanel) { onHerdrPanelChange?.invoke(false) }
+    BackHandler(enabled = herdrJump) { herdrJumpOpen = false }
 
     // Swipe up on the bar opens the tray, swipe down on the bar or tray closes it.
     // Only the drag's total distance counts, so a tap on a key is never a swipe.
@@ -767,6 +821,34 @@ fun TerminalComposeBar(
                         section = herdrSection,
                         onSection = { herdrSection = it },
                         host = bridge.host.let { "${it.nickname} (${it.username}@${it.hostname}:${it.port})" },
+                        onChat = onChat,
+                        onJumpTo = { openHerdrJump(UsageActions.HERDR_JUMP_OPEN) },
+                        onBoard = onBoard,
+                        onDiff = onDiff,
+                    )
+                }
+            }
+        }
+        AnimatedVisibility(
+            visible = herdrJump && herd != null,
+            enter = fadeIn(tween(Ormus.motion.FAST_MS)),
+            exit = fadeOut(tween(Ormus.motion.FAST_MS)),
+        ) {
+            if (herd != null) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .ormusPanelTop()
+                        .testTag(HERDR_JUMP_TEST_TAG),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                ) {
+                    HerdrJumpPicker(
+                        session = herd,
+                        onPick = { target ->
+                            usage.log(UsageActions.HERDR_JUMP_PICK)
+                            herdrJumpOpen = false
+                            bridge.jumpToHerdrTab(target)?.let { why -> Toast.makeText(context, why, Toast.LENGTH_LONG).show() }
+                        },
                     )
                 }
             }
@@ -786,7 +868,7 @@ fun TerminalComposeBar(
                     .padding(horizontal = Ormus.spacing.sm, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                // Row 1: arrows, ⏎, Ctrl on plain hosts, ⋯, then the tab switchers above Send.
+                // Row 1: the page keys, Herdr, ⋯, then Needs you above ⏎.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(KEY_GAP),
@@ -823,27 +905,14 @@ fun TerminalComposeBar(
                         onClick = { if (trayOpen) closeTray() else openTray(UsageActions.BAR_TRAY_OPEN) },
                         modifier = Modifier.weight(1f),
                     )
-                    // Herdr tab switching: bare arrows, named Previous tab and Next tab. Off
-                    // where the host binds them to nothing Mercurio can send.
-                    val previousTab = herdrKeys.bytes(HerdrKey.PREVIOUS_TAB)
-                    val nextTab = herdrKeys.bytes(HerdrKey.NEXT_TAB)
-                    ControlKey(
-                        "←",
-                        previousTab.orEmpty(),
-                        sendKey,
-                        Modifier.weight(1f),
-                        enabled = herdrSession && previousTab != null,
-                        symbolSize = 20.sp,
-                        description = stringResource(R.string.palette_key_prev_tab),
-                    )
-                    ControlKey(
-                        "→",
-                        nextTab.orEmpty(),
-                        sendKey,
-                        Modifier.weight(1f),
-                        enabled = herdrSession && nextTab != null,
-                        symbolSize = 20.sp,
-                        description = stringResource(R.string.palette_key_next_tab),
+                    // Where the tab arrows were: swipes switch tabs now. Dimmed, like Herdr,
+                    // until the session runs Herdr, so the row never shifts.
+                    NeedsYouKey(
+                        waiting = needsYou,
+                        onClick = { jumpToNeedsYou() },
+                        onLongClick = { openBoard() },
+                        enabled = herdrSession && bridge.herd != null,
+                        modifier = Modifier.weight(2f),
                     )
                 }
 
@@ -894,8 +963,34 @@ fun TerminalComposeBar(
 /** Stands in for a missing Herdr side: no snapshot, ever. */
 private val NO_HERDR_SNAPSHOT: StateFlow<HerdrSessionSnapshot?> = MutableStateFlow(null)
 
+/** Stand in for a missing Herdr side: no session listed, no other session's snapshot. */
+private val NO_HERDR_SESSIONS: StateFlow<List<String>> = MutableStateFlow(emptyList())
+private val NO_HERDR_OTHERS: StateFlow<Map<String, HerdrSessionSnapshot>> = MutableStateFlow(emptyMap())
+
+/**
+ * The compose bar's Needs you key: "Needs you", and "Needs you · N" in gold while [waiting]
+ * agents wait for the user; a hairline ghost when none does.
+ */
+@Composable
+internal fun NeedsYouKey(waiting: Int, onClick: () -> Unit, onLongClick: () -> Unit, enabled: Boolean, modifier: Modifier = Modifier) {
+    OrmusKey(
+        label = if (waiting > 0) stringResource(R.string.needs_you_key_count, waiting) else stringResource(R.string.needs_you_key),
+        onClick = onClick,
+        modifier = modifier,
+        tone = if (waiting > 0 && enabled) KeyTone.ACCENT else KeyTone.PLAIN,
+        enabled = enabled,
+        // Under the other keys' 14sp, so "Needs you · 12" fits row 1 on a 360dp phone.
+        symbolSize = 12.sp,
+        description = stringResource(R.string.needs_you_key_description, waiting),
+        onLongClick = onLongClick,
+    )
+}
+
 /** Stands in for a missing Herdr side's keys: Herdr's defaults. */
 private val DEFAULT_HERDR_KEYS: StateFlow<HerdrKeys> = MutableStateFlow(HerdrKeys.DEFAULT)
+
+/** Test tag on the open Jump to list. */
+internal const val HERDR_JUMP_TEST_TAG = "composeBarHerdrJump"
 
 /** Test tag on the open Herdr panel. */
 internal const val HERDR_PANEL_TEST_TAG = "composeBarHerdrPanel"

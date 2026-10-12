@@ -138,7 +138,7 @@ class HerdrCommands(private val session: String? = null) {
         val workspace = snapshot?.focusedWorkspaceId?.takeIf { ID.matches(it) }
         val label = text?.trim()?.ifEmpty { null }
         return when (action) {
-            HerdrAction.FocusNextBlocked -> nextBlocked(snapshot)?.let { cli("agent", "focus", q(it)) }
+            HerdrAction.FocusNextBlocked -> nextBlocked(snapshot)?.let { focusAgent(it, snapshot) }
 
             is HerdrAction.StartAgent -> pane?.let {
                 // Herdr agent names are unique per session, so name it after its pane;
@@ -151,7 +151,7 @@ class HerdrCommands(private val session: String? = null) {
 
             HerdrAction.ExplainDetection -> pane?.let { cli("agent", "explain", q(it)) }
 
-            is HerdrAction.FocusAgent -> cli("agent", "focus", q(action.paneId))
+            is HerdrAction.FocusAgent -> focusAgent(action.paneId, snapshot)
 
             HerdrAction.SplitRight -> pane?.let { cli("pane", "split", q(it), "--direction", "right", "--focus") }
 
@@ -202,10 +202,25 @@ class HerdrCommands(private val session: String? = null) {
         return (blocked.firstOrNull { it.paneId != snapshot?.focusedPaneId } ?: blocked.firstOrNull())?.paneId
     }
 
+    /**
+     * Focus the agent in [paneId]. Herdr 0.9.0's `agent focus` moves Herdr's focus to a pane
+     * in another tab but leaves an attached client showing the tab it was on; `tab focus`
+     * moves the client (measured). So the agent's tab, when [snapshot] knows it, is focused
+     * first, in the same login shell, and the pane after it.
+     */
+    private fun focusAgent(paneId: String, snapshot: HerdrSessionSnapshot?): HerdrInvocation.Cli {
+        val tab = (snapshot?.agents?.firstOrNull { it.paneId == paneId }?.tabId ?: snapshot?.panes?.firstOrNull { it.paneId == paneId }?.tabId)
+            ?.takeIf { ID.matches(it) }
+            ?: return cli("agent", "focus", q(paneId))
+        return HerdrInvocation.Cli(HerdrApi.loginShell(herdr("tab", "focus", q(tab)) + " && " + herdr("agent", "focus", q(paneId))))
+    }
+
     /** `herdr [--session S] <words>` run through a login shell; values arrive already quoted by [q]. */
-    private fun cli(vararg words: String): HerdrInvocation.Cli {
+    private fun cli(vararg words: String): HerdrInvocation.Cli = HerdrInvocation.Cli(HerdrApi.loginShell(herdr(*words)))
+
+    private fun herdr(vararg words: String): String {
         val session = session?.let { "--session ${q(it)} " }.orEmpty()
-        return HerdrInvocation.Cli(HerdrApi.loginShell("herdr $session${words.joinToString(" ")}"))
+        return "herdr $session${words.joinToString(" ")}"
     }
 
     /** A value (id, name, kind) as one single-quoted shell word. */

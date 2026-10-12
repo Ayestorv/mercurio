@@ -22,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.connectbot.service.FixPrompt
@@ -64,9 +65,17 @@ private val ESC: String = 27.toChar().toString()
  * snapshot with [HerdrMonitor] while the session is up, and runs the command
  * sheet's actions against the focused ids in the latest snapshot.
  *
+ * The host may run more Herdr sessions than the default one ([sessions]). The
+ * monitor, the attention rules and [snapshot] stay on the default session; the
+ * others are fetched when asked ([refresh] with a session name, kept in [others]),
+ * and [perform] and [answer] take the session to act on. When the terminal attached
+ * another session ([attached]), each poll fetches that one too.
+ *
  * [runner] runs one command over an exec channel beside the PTY and blocks
  * (SSH.execDetailed); null means it never ran. [sendKeys] writes client
- * keystrokes to the PTY. Blocking work runs on [io].
+ * keystrokes to the PTY; [sendKey] presses a key there through the terminal, which
+ * encodes it in the host's modes (DECCKM for arrows) and writes it after what was sent
+ * before. Blocking work runs on [io].
  */
 class HerdSession(
     private val hostName: String,
@@ -82,13 +91,37 @@ class HerdSession(
     private val isOnScreen: () -> Boolean = { false },
     /** Notifications the attention rules want posted. */
     private val onNotices: (List<HerdAttention.Notice>) -> Unit = {},
+    private val sendKey: (HerdrTermKey) -> Unit = {},
 ) {
     private val attention = HerdAttention(clock)
 
+    /** When each agent entered its state, from every snapshot this side reads (the Agents board). */
+    val since = AgentSince(clock)
+
     private val _snapshot = MutableStateFlow<HerdrSessionSnapshot?>(null)
 
-    /** The latest snapshot, null until the first poll lands. */
+    /** The default session's latest snapshot, null until the first poll lands. */
     val snapshot: StateFlow<HerdrSessionSnapshot?> = _snapshot.asStateFlow()
+
+    private val _sessions = MutableStateFlow(listOf(HerdrCommands.DEFAULT_SESSION))
+
+    /** The running Herdr sessions on the host, the default first; just the default until listed. */
+    val sessions: StateFlow<List<String>> = _sessions.asStateFlow()
+
+    private val _others = MutableStateFlow<Map<String, HerdrSessionSnapshot>>(emptyMap())
+
+    /** The latest snapshot of each other running session that was fetched, by name. */
+    val others: StateFlow<Map<String, HerdrSessionSnapshot>> = _others.asStateFlow()
+
+    private val _attached = MutableStateFlow(HerdrCommands.DEFAULT_SESSION)
+
+    /** The Herdr session the terminal attached to: the default unless the connect picker attached another. */
+    val attached: StateFlow<String> = _attached.asStateFlow()
+
+    private val _chosen = MutableStateFlow(HerdrCommands.DEFAULT_SESSION)
+
+    /** The session the Herdr panel acts on: the attached one until the user picks another. */
+    val chosen: StateFlow<String> = _chosen.asStateFlow()
 
     private val _failure = MutableStateFlow<HerdrFailure?>(null)
 
@@ -105,15 +138,29 @@ class HerdSession(
     /** Herdr's prefix and client keys on this host, read from its config when the session starts. */
     val keys: StateFlow<HerdrKeys> = _keys.asStateFlow()
 
+    private val _crossesMachines = MutableStateFlow(false)
+
+    /**
+     * Whether the host's Herdr client has a saved machine enabled ([HerdrMachines]): workspace
+     * swipes then go through Herdr's switcher, the one way to reach another machine.
+     */
+    val crossesMachines: StateFlow<Boolean> = _crossesMachines.asStateFlow()
+
     private val monitor = HerdrMonitor(
         hostName = hostName,
         runCommand = { command -> stdoutOrNull(command) },
         scope = CoroutineScope(scope.coroutineContext + io),
         pollIntervalMs = pollIntervalMs,
         onSnapshot = { snapshot ->
+            since.observe(HerdrCommands.DEFAULT_SESSION, snapshot)
             _snapshot.value = snapshot
             val notices = attention.onSnapshot(snapshot, isOnScreen())
             if (notices.isNotEmpty()) onNotices(notices.map(::withPaneTail))
+            // Swipes act on the attached session: keep its focused ids as fresh as the default's.
+            val other = _attached.value
+            if (!HerdrSessions.isDefault(other)) {
+                stdoutOrNull(HerdrSessions.snapshotCommand(other))?.let(::parseHerdrSnapshot)?.let { keep(other, it) }
+            }
         },
     )
 
@@ -130,17 +177,73 @@ class HerdSession(
         attention.reset()
         monitor.stop()
         monitor.start()
-        scope.launch { readKeys() }
+        scope.launch {
+            readKeys()
+            refreshSessions()
+            readMachines()
+        }
     }
 
     fun stop() {
         monitor.stop()
     }
 
-    /** Fetch a snapshot now, outside the poll rhythm (after an action, or on opening a screen). */
-    suspend fun refresh() {
-        val raw = withContext(io) { stdoutOrNull(Herd.snapshotCommand) } ?: return
-        parseHerdrSnapshot(raw)?.let { _snapshot.value = it }
+    /** Fetch [session]'s snapshot now, outside the poll rhythm (after an action, or on opening a screen). */
+    suspend fun refresh(session: String = HerdrCommands.DEFAULT_SESSION) {
+        val raw = withContext(io) { stdoutOrNull(HerdrSessions.snapshotCommand(session)) } ?: return
+        parseHerdrSnapshot(raw)?.let { keep(session, it) }
+    }
+
+    /** List the running sessions again and fetch every one's snapshot (the Jump to list). */
+    suspend fun refreshAll() {
+        refreshSessions()
+        readMachines()
+        _sessions.value.forEach { refresh(it) }
+    }
+
+    /** The last [lines] lines of [paneId] in [session], as plain text; null when the read failed. */
+    suspend fun readPane(paneId: String, session: String, lines: Int = HerdApproval.READ_LINES): String? = withContext(io) { stdoutOrNull(AgentsBoard.readCommand(session, paneId, lines)) }
+
+    /** [session]'s latest snapshot, null until one landed. */
+    fun snapshotOf(session: String): HerdrSessionSnapshot? = if (HerdrSessions.isDefault(session)) _snapshot.value else _others.value[session]
+
+    /**
+     * List the host's running Herdr sessions again. Off the failure line, like [readKeys]: a
+     * Herdr without `session list --json` simply keeps the default session alone.
+     */
+    suspend fun refreshSessions() {
+        val out = withContext(io) { runCatching { runner(HerdrSessions.listCommand) }.getOrNull() }
+        val running = out?.takeIf { it.exitCode == null || it.exitCode == 0 }?.stdout?.let(HerdrSessions::parse) ?: return
+        val names = (listOf(HerdrCommands.DEFAULT_SESSION) + running).distinct()
+        _sessions.value = names
+        _others.update { snapshots -> snapshots.filterKeys { it in names } }
+        if (_chosen.value !in names) _chosen.value = HerdrCommands.DEFAULT_SESSION
+    }
+
+    /**
+     * Read whether the host's Herdr client has saved machines. Off the failure line, like
+     * [refreshSessions]: a Herdr without `machine list` simply has none; a read that never
+     * ran keeps what was known.
+     */
+    suspend fun readMachines() {
+        val out = withContext(io) { runCatching { runner(HerdrMachines.listCommand) }.getOrNull() } ?: return
+        _crossesMachines.value = out.takeIf { it.exitCode == null || it.exitCode == 0 }?.stdout?.let(HerdrMachines::anyEnabled) ?: false
+    }
+
+    /** Act on [session] from now on in the Herdr panel; its snapshot follows. */
+    fun choose(session: String) {
+        _chosen.value = session
+    }
+
+    /** The terminal attached [session]: swipes and the panel act on it from now on. */
+    fun attach(session: String) {
+        _attached.value = session
+        _chosen.value = session
+    }
+
+    private fun keep(session: String, snapshot: HerdrSessionSnapshot) {
+        since.observe(session, snapshot)
+        if (HerdrSessions.isDefault(session)) _snapshot.value = snapshot else _others.update { it + (session to snapshot) }
     }
 
     /**
@@ -194,17 +297,39 @@ class HerdSession(
         return sequence
     }
 
+    /**
+     * Move the attached client one workspace [down] (the next in the sidebar) or up through
+     * Herdr's own switcher, which walks every connected machine's workspaces where `workspace
+     * focus` reaches only this host's. The keys go out together: herdr 0.9.3 took them in one
+     * write every time (measured). Returns why nothing was sent when the host binds a switcher
+     * key to nothing Mercurio can send.
+     */
+    fun switchWorkspace(down: Boolean): String? {
+        val keys = _keys.value
+        val strokes = keys.switchWorkspace(down) ?: return keys.switchProblem(down)
+        strokes.forEach { stroke ->
+            when (stroke) {
+                is HerdrStroke.Bytes -> sendKeys(keystroke(stroke.bytes))
+                is HerdrStroke.Key -> sendKey(stroke.key)
+            }
+        }
+        scope.launch { refresh(_attached.value) }
+        return null
+    }
+
     /** Clear the result line (the sheet closed). */
     fun clearResult() {
         _result.value = null
     }
 
     /**
-     * Run [action] (with [text] for a rename). Keystrokes go to the PTY at once;
-     * commands run off the main thread, and success refreshes the snapshot.
+     * Run [action] (with [text] for a rename) in [session]. Keystrokes go to the PTY at
+     * once, whatever the session; commands run off the main thread, and success refreshes
+     * that session's snapshot.
      */
-    fun perform(action: HerdrAction, text: String? = null) {
-        when (val invocation = commands.build(action, _snapshot.value, text, _keys.value)) {
+    fun perform(action: HerdrAction, text: String? = null, session: String = HerdrCommands.DEFAULT_SESSION) {
+        val builder = if (HerdrSessions.isDefault(session)) commands else HerdrSessions.commands(session)
+        when (val invocation = builder.build(action, snapshotOf(session), text, _keys.value)) {
             null -> _result.value = HerdResult.Unavailable(action)
 
             is HerdrInvocation.Keys -> {
@@ -224,24 +349,26 @@ class HerdSession(
                     } else {
                         HerdResult.Succeeded(action, out?.stdout?.trim()?.takeIf { action == HerdrAction.ExplainDetection })
                     }
-                    if (error == null) refresh()
+                    if (error == null) refresh(session)
                 }
             }
         }
     }
 
     /**
-     * Answer the blocked agent in [paneId] from its notification: read a fresh snapshot
-     * and send [answer]'s key only if that pane is still blocked on an answerable agent.
+     * Answer the blocked agent in [session]'s [paneId] from its notification: read a fresh
+     * snapshot of that session and send [answer]'s key only if that pane is still blocked
+     * on an answerable agent.
      */
-    suspend fun answer(paneId: String, answer: HerdAnswer): HerdAnswerOutcome = withContext(io) {
-        val snapshot = stdoutOrNull(Herd.snapshotCommand)?.let { parseHerdrSnapshot(it) }
+    suspend fun answer(paneId: String, answer: HerdAnswer, session: String = HerdrCommands.DEFAULT_SESSION): HerdAnswerOutcome = withContext(io) {
+        val snapshot = stdoutOrNull(HerdrSessions.snapshotCommand(session))?.let { parseHerdrSnapshot(it) }
             ?: return@withContext HerdAnswerOutcome.Failed(FixPrompt.herdrReason(_failure.value))
-        _snapshot.value = snapshot
+        keep(session, snapshot)
         if (!HerdApproval.stillBlocked(snapshot, paneId)) return@withContext HerdAnswerOutcome.NotBlocked
-        val error = HerdrApi.parseCommandError(run(HerdApproval.sendKeysCommand(paneId, answer)))
+        val error = HerdrApi.parseCommandError(run(HerdApproval.sendKeysCommand(paneId, answer, session)))
         if (error != null) return@withContext HerdAnswerOutcome.Failed(oneLine(error.message.ifBlank { error.code }))
-        attention.answered(paneId)
+        // The attention rules watch the default session only.
+        if (HerdrSessions.isDefault(session)) attention.answered(paneId)
         HerdAnswerOutcome.Sent
     }
 

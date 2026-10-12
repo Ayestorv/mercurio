@@ -56,9 +56,16 @@ class HerdPushAlertTest {
         assertNull("another event", parse(blocked.replace("pane.agent_status_changed", "pane.created")))
         assertNull("no host", parse(blocked.replace("\"host\":\"Sun\"", "\"host\":\"\"")))
         assertNull("odd pane id", parse(blocked.replace("w1:p3\"", "w1:p3; rm -rf ~\"")))
-        // Pane ids are per session, and Mercurio answers in the default one.
-        assertNull("named session", parse(blocked.replace("\"session\":\"default\"", "\"session\":\"work\"")))
+        assertNull("odd session name", parse(blocked.replace("\"session\":\"default\"", "\"session\":\"work; rm -rf ~\"")))
         assertTrue("no session field", parse(blocked.replace("\"session\":\"default\",", "")) != null)
+    }
+
+    @Test
+    fun notice_carriesItsSession_theDefaultWhenTheWatcherNamesNone() {
+        // Pane ids repeat across sessions: the notice answers in the session the alert came from.
+        assertEquals("work", parse(blocked.replace("\"session\":\"default\"", "\"session\":\"work\""))?.notice()?.session)
+        assertEquals("default", parse(blocked)?.notice()?.session)
+        assertEquals("default", parse(blocked.replace("\"session\":\"default\",", ""))?.notice()?.session)
     }
 
     @Test

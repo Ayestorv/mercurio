@@ -77,6 +77,7 @@ import solutions.ormus.logos.herd.HerdAnswer
 import solutions.ormus.logos.herd.HerdAnswerOutcome
 import solutions.ormus.logos.herd.HerdAttention
 import solutions.ormus.logos.herd.HerdSession
+import solutions.ormus.logos.herd.HerdrCommands
 import solutions.ormus.logos.push.PushEndpoints
 import timber.log.Timber
 import java.io.IOException
@@ -811,6 +812,7 @@ class TerminalManager :
     private fun answerHerd(intent: Intent) {
         val hostId = intent.getLongExtra(ConnectionNotifier.EXTRA_HERD_HOST, 0L)
         val paneId = intent.getStringExtra(ConnectionNotifier.EXTRA_HERD_PANE) ?: return
+        val session = intent.getStringExtra(ConnectionNotifier.EXTRA_HERD_SESSION) ?: HerdrCommands.DEFAULT_SESSION
         val agentKind = intent.getStringExtra(ConnectionNotifier.EXTRA_HERD_AGENT)
         val answer = HerdAnswer.entries.firstOrNull { it.name == intent.getStringExtra(ConnectionNotifier.EXTRA_HERD_ANSWER) } ?: return
         usageTracker.log(if (answer == HerdAnswer.APPROVE) UsageActions.NOTIFY_APPROVE else UsageActions.NOTIFY_DENY)
@@ -819,11 +821,11 @@ class TerminalManager :
             val host = bridge?.host ?: hostRepository.findHostById(hostId) ?: return@launch
             val live = bridge?.herd
             val outcome = when (val plan = HerdOfflineAnswer.plan(live != null, host) { offlineKeys(host) }) {
-                HerdOfflineAnswer.Plan.UseSession -> checkNotNull(live).answer(paneId, answer)
-                is HerdOfflineAnswer.Plan.Connect -> answerOffline(host, plan.keys, paneId, answer)
+                HerdOfflineAnswer.Plan.UseSession -> checkNotNull(live).answer(paneId, answer, session)
+                is HerdOfflineAnswer.Plan.Connect -> answerOffline(host, plan.keys, session, paneId, answer)
                 HerdOfflineAnswer.Plan.NeedsApp -> HerdAnswerOutcome.Failed(getString(R.string.notification_herd_needs_app, host.nickname))
             }
-            connectionNotifier.showHerdAnswer(this@TerminalManager, host, paneId, agentKind, outcome)
+            connectionNotifier.showHerdAnswer(this@TerminalManager, host, session, paneId, agentKind, outcome)
             // Started only for this tap, with nothing to keep alive.
             if (bridge == null && !isUiBound) stopNow()
         }
@@ -840,11 +842,11 @@ class TerminalManager :
      * Log in to [host] with [keys] and no terminal, answer through a throwaway Herdr side
      * (which checks the pane is still blocked), and log out. Nothing goes to any PTY.
      */
-    private suspend fun answerOffline(host: Host, keys: List<KeyPair>, paneId: String, answer: HerdAnswer): HerdAnswerOutcome = withContext(dispatchers.io) {
+    private suspend fun answerOffline(host: Host, keys: List<KeyPair>, session: String, paneId: String, answer: HerdAnswer): HerdAnswerOutcome = withContext(dispatchers.io) {
         usageTracker.log(UsageActions.NOTIFY_ANSWER_CONNECT)
         HeadlessSsh(host, SSH(host, null, this@TerminalManager).HostKeyVerifier(host)).use { ssh ->
             when (val login = ssh.login(keys)) {
-                HeadlessSsh.Login.Ok -> HerdSession(host.nickname, ssh::exec, sendKeys = {}, scope, dispatchers.io).answer(paneId, answer)
+                HeadlessSsh.Login.Ok -> HerdSession(host.nickname, ssh::exec, sendKeys = {}, scope, dispatchers.io).answer(paneId, answer, session)
                 HeadlessSsh.Login.HostKeyRefused -> HerdAnswerOutcome.Failed(getString(R.string.notification_herd_host_key, host.nickname))
                 HeadlessSsh.Login.KeysRefused -> HerdAnswerOutcome.Failed(getString(R.string.notification_herd_keys_refused, host.nickname))
                 is HeadlessSsh.Login.Failed -> HerdAnswerOutcome.Failed(getString(R.string.notification_herd_unreachable, host.nickname, login.message))

@@ -18,6 +18,7 @@
 package org.connectbot.ui.screens.herd
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -71,6 +72,7 @@ import org.connectbot.ui.components.KeyTone
 import org.connectbot.ui.components.OrmusKey
 import org.connectbot.ui.components.WORD_KEY_PADDING
 import org.connectbot.ui.components.copyFixPrompt
+import org.connectbot.ui.screens.chat.AgentChat
 import org.connectbot.ui.theme.Ormus
 import org.connectbot.ui.theme.OrmusCornerShape
 import org.connectbot.ui.theme.OrmusMono
@@ -79,12 +81,14 @@ import org.connectbot.usage.UsageActions
 import solutions.ormus.logos.herd.HerdResult
 import solutions.ormus.logos.herd.HerdSession
 import solutions.ormus.logos.herd.HerdrAction
+import solutions.ormus.logos.herd.HerdrCommands
 import solutions.ormus.logos.herd.HerdrDirection
 import solutions.ormus.logos.herd.HerdrFailure
 import solutions.ormus.logos.herd.HerdrKey
 import solutions.ormus.logos.herd.HerdrKeys
 import solutions.ormus.logos.herd.HerdrPrefix
 import solutions.ormus.logos.herd.HerdrSessionSnapshot
+import solutions.ormus.logos.herd.HerdrSessions
 import solutions.ormus.logos.herd.HerdrTabInfo
 
 /** Test tag on the card shown while Herdr is not answering. */
@@ -100,6 +104,9 @@ const val HERDR_PREFIX_TAG = "herdr_prefix"
 
 /** Test tag on the one-line result of the last action. */
 const val HERDR_RESULT_TAG = "herdr_result"
+
+/** Test tag on the row of Herdr session keys at the top of the panel. */
+const val HERDR_SESSION_ROW_TAG = "herdr_session_row"
 
 /** Test tag on the row of numbered tab keys at the top of the panel. */
 const val HERDR_TAB_ROW_TAG = "herdr_tab_row"
@@ -141,17 +148,34 @@ fun HerdrCommandPanel(
     host: String = "",
     /** The user's hidden, changed and added keys, one layout for the app. */
     store: HerdrPanelStore = rememberHerdrPanelStore(),
+    /** Opens the focused agent's chat; the Chat key is off where it has none. */
+    onChat: (() -> Unit)? = null,
+    /** Open Jump to (every tab of every session); no key without it. */
+    onJumpTo: (() -> Unit)? = null,
+    /** Open the Agents board (every agent of every session); no key without it. */
+    onBoard: (() -> Unit)? = null,
+    /** Open the diff of the focused pane's work tree; no Diff key when null. */
+    onDiff: (() -> Unit)? = null,
 ) {
     val usage = LocalUsageLog.current
     val layout by store.layout.collectAsState()
-    val snapshot by session.snapshot.collectAsState()
+    val sessions by session.sessions.collectAsState()
+    val chosen by session.chosen.collectAsState()
+    val defaultSnapshot by session.snapshot.collectAsState()
+    val others by session.others.collectAsState()
+    // The panel acts on the chosen Herdr session; the default one is polled, the others fetched.
+    val snapshot = if (HerdrSessions.isDefault(chosen)) defaultSnapshot else others[chosen]
     val result by session.result.collectAsState()
     val failure by session.failure.collectAsState()
     val hostKeys by session.keys.collectAsState()
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    // Act on what has focus now, not on the last poll.
-    LaunchedEffect(session) { session.refresh() }
+    // Act on what has focus now, not on the last poll, and on the sessions running now.
+    LaunchedEffect(session) {
+        session.refresh()
+        session.refreshSessions()
+    }
+    LaunchedEffect(session, chosen) { if (!HerdrSessions.isDefault(chosen)) session.refresh(chosen) }
     // Closing the panel without using a prefix the Herdr key sent leaves Herdr's prefix mode.
     DisposableEffect(session) {
         onDispose {
@@ -166,6 +190,13 @@ fun HerdrCommandPanel(
         hostKeys = hostKeys,
         section = section,
         onSection = onSection,
+        onJumpTo = onJumpTo,
+        sessions = sessions,
+        chosenSession = chosen,
+        onChooseSession = { name ->
+            usage.log(UsageActions.HERDR_SHEET_SESSION)
+            session.choose(name)
+        },
         // A prompt to paste into an agent: what failed on this host, the command, its output.
         onCopyFix = { reason ->
             usage.log(UsageActions.HERDR_SHEET_FIX_PROMPT)
@@ -197,16 +228,16 @@ fun HerdrCommandPanel(
         },
         onRetry = {
             usage.log(UsageActions.HERDR_SHEET_RETRY)
-            scope.launch { session.refresh() }
+            scope.launch { session.refresh(chosen) }
         },
         onRun = { action, text ->
             // The usage log records which action ran, never the name typed for it.
             usage.log(herdrSheetUsageId(action))
-            session.perform(action, text)
+            session.perform(action, text, chosen)
         },
         onTabKey = { action ->
             usage.log(UsageActions.HERDR_SHEET_TAB_KEY)
-            session.perform(action)
+            session.perform(action, session = chosen)
         },
         layout = layout,
         // The usage log records what changed, never the label or key typed.
@@ -220,6 +251,20 @@ fun HerdrCommandPanel(
                 is HerdrPanelEdit.Remove -> store.remove(edit.index)
                 HerdrPanelEdit.Restore -> store.restoreDefaults()
                 HerdrPanelEdit.OpenMenu -> Unit
+            }
+        },
+        onChat = onChat,
+        onBoard = onBoard?.let { open ->
+            {
+                usage.log(UsageActions.BOARD_OPEN)
+                open()
+            }
+        },
+        needsYou = boardNeedsYou(defaultSnapshot, others, sessions),
+        onDiff = onDiff?.let {
+            {
+                usage.log(UsageActions.HERDR_SHEET_DIFF)
+                it()
             }
         },
         modifier = modifier,
@@ -314,6 +359,21 @@ fun HerdrCommandContent(
     layout: HerdrPanelLayout = HerdrPanelLayout(),
     /** Change [layout]: hide, edit, add, remove a key, or restore the defaults. */
     onEdit: (HerdrPanelEdit) -> Unit = {},
+    /** Opens the focused agent's chat (Agents group); no Chat key when null. */
+    onChat: (() -> Unit)? = null,
+    /** The host's running Herdr sessions; a switcher shows when there is more than one. */
+    sessions: List<String> = emptyList(),
+    /** The session [snapshot] is from and the actions run in. */
+    chosenSession: String = HerdrCommands.DEFAULT_SESSION,
+    onChooseSession: (String) -> Unit = {},
+    /** Open Jump to; the Tabs group leads with its key when set. */
+    onJumpTo: (() -> Unit)? = null,
+    /** Open the Agents board; the Agents group leads with its key when set. */
+    onBoard: (() -> Unit)? = null,
+    /** Agents waiting for the user in every session, counted on the board key. */
+    needsYou: Int = 0,
+    /** Open the diff viewer; no Diff key when null. */
+    onDiff: (() -> Unit)? = null,
 ) {
     // An action waiting for its name or its confirmation (the second tap).
     var pending by remember { mutableStateOf<HerdrAction?>(null) }
@@ -341,6 +401,12 @@ fun HerdrCommandContent(
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        // Which Herdr session the panel acts on, when the host runs more than one.
+        SessionRow(sessions, chosenSession) { name ->
+            pending = null
+            prompt = null
+            onChooseSession(name)
+        }
         // The focused workspace's tabs by number, whatever group is open: one tap from the Herdr key.
         TabKeyRow(snapshot) { action ->
             pending = null
@@ -462,9 +528,19 @@ fun HerdrCommandContent(
         Column(modifier = body, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             when (section) {
                 HerdrSection.AGENTS -> Actions {
+                    onBoard?.let { BoardKey(needsYou, it) }
                     ActionButton(HerdrAction.FocusNextBlocked, keys, primary = true)
+                    if (onChat != null) {
+                        OrmusKey(
+                            label = stringResource(R.string.chat_open),
+                            onClick = onChat,
+                            enabled = AgentChat.target(snapshot) != null,
+                            contentPadding = WORD_KEY_PADDING,
+                        )
+                    }
                     HerdrAction.START_KINDS.forEach { ActionButton(HerdrAction.StartAgent(it), keys) }
                     ActionButton(HerdrAction.ExplainDetection, keys)
+                    onDiff?.let { OrmusKey(label = stringResource(R.string.diff_title), onClick = it, contentPadding = WORD_KEY_PADDING) }
                 }
 
                 HerdrSection.PANES -> {
@@ -480,6 +556,15 @@ fun HerdrCommandContent(
                 }
 
                 HerdrSection.TABS -> {
+                    // Every tab of every session, the ones that need you first: the group's main key.
+                    onJumpTo?.let { open ->
+                        OrmusKey(
+                            label = stringResource(R.string.herdr_jump_open),
+                            onClick = open,
+                            tone = KeyTone.ON,
+                            contentPadding = WORD_KEY_PADDING,
+                        )
+                    }
                     val tabs = workspaceTabs(snapshot)
                     if (tabs.isNotEmpty()) {
                         JumpLabel(R.string.herdr_jump_tabs)
@@ -624,6 +709,35 @@ private fun TabKeyRow(snapshot: HerdrSessionSnapshot?, onTap: (HerdrAction.Focus
                     .semantics { selected = focused },
                 tone = if (focused) KeyTone.ACCENT else KeyTone.PLAIN,
                 description = tab.label.ifBlank { number },
+            )
+        }
+    }
+}
+
+/**
+ * One key per running Herdr session, the chosen one gold-tinted, in a row that scrolls
+ * sideways when the names do not fit. Hidden while the host runs one session.
+ */
+@Composable
+private fun SessionRow(sessions: List<String>, chosen: String, onChoose: (String) -> Unit) {
+    if (sessions.size < 2) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .testTag(HERDR_SESSION_ROW_TAG),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MicroLabel(stringResource(R.string.herdr_session_label))
+        sessions.forEach { name ->
+            val picked = name == chosen
+            OrmusKey(
+                label = name,
+                onClick = { onChoose(name) },
+                modifier = Modifier.semantics { selected = picked },
+                tone = if (picked) KeyTone.ACCENT else KeyTone.PLAIN,
+                contentPadding = WORD_KEY_PADDING,
             )
         }
     }

@@ -209,8 +209,8 @@ class HerdAttentionTest {
         val session = HerdSession(
             hostName = "Sun",
             runner = { command ->
-                // start() reads the prefix too: no config, so not a scripted poll.
-                if (command == HerdrPrefix.readCommand) {
+                // start() reads the prefix and lists the sessions and machines too: not scripted polls.
+                if (command == HerdrPrefix.readCommand || command == HerdrSessions.listCommand || command == HerdrMachines.listCommand) {
                     CommandOutput("", "", 0)
                 } else if ("pane read" in command) {
                     CommandOutput("Do you want to proceed?\n\u276F 1. Yes\n  2. No\n", "", 0)

@@ -66,6 +66,7 @@ import org.connectbot.util.PreferenceConstants
 import org.connectbot.util.ShortcutIconGenerator
 import org.connectbot.util.isNotificationPermissionGranted
 import solutions.ormus.logos.herd.HerdrAction
+import solutions.ormus.logos.herd.HerdrCommands
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -81,6 +82,9 @@ class MainActivity : AppCompatActivity() {
         /** Extra on a host URI intent: the Herdr pane to focus once its console opens. */
         const val EXTRA_HERD_PANE = "solutions.ormus.logos.extra.HERD_PANE"
 
+        /** Extra beside [EXTRA_HERD_PANE]: the Herdr session the pane is in (the default when missing). */
+        const val EXTRA_HERD_SESSION = "solutions.ormus.logos.extra.HERD_SESSION"
+
         /** Extra beside [EXTRA_HERD_PANE]: the usage id of the notification that was tapped. */
         const val EXTRA_HERD_NOTICE = "solutions.ormus.logos.extra.HERD_NOTICE"
     }
@@ -92,12 +96,14 @@ class MainActivity : AppCompatActivity() {
     private var bound = false
     private var requestedUri: Uri? by mutableStateOf(null)
 
-    // The Herdr pane a notification asked to focus, used with requestedUri.
+    // The Herdr pane a notification asked to focus, and its session, used with requestedUri.
     private var requestedHerdPane: String? = null
+    private var requestedHerdSession: String = HerdrCommands.DEFAULT_SESSION
 
     /** Remember a tapped Herdr notification's pane and log the tap (an id only). */
     private fun takeHerdNotification(intent: Intent?) {
         requestedHerdPane = intent?.getStringExtra(EXTRA_HERD_PANE)
+        requestedHerdSession = intent?.getStringExtra(EXTRA_HERD_SESSION) ?: HerdrCommands.DEFAULT_SESSION
         intent?.getStringExtra(EXTRA_HERD_NOTICE)?.let { usageTracker.log(it) }
     }
     private var pendingHostConnection: Host? by mutableStateOf(null)
@@ -412,7 +418,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 // From a Herdr notification: focus that agent in Herdr as the console opens.
-                requestedHerdPane?.let { pane -> bridge.herd?.perform(HerdrAction.FocusAgent(pane)) }
+                requestedHerdPane?.let { pane -> bridge.herd?.perform(HerdrAction.FocusAgent(pane), session = requestedHerdSession) }
                 requestedHerdPane = null
 
                 controller.navigate("${NavDestinations.CONSOLE}/${bridge.host.id}") {

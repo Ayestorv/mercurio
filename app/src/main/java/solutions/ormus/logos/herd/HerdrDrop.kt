@@ -31,8 +31,14 @@ package solutions.ormus.logos.herd
 object HerdrDrop {
     private val DROP = Regex("\u001b\\[\\?1049l(?:\u001b\\[[0-9;?<> ]*[A-Za-z])*herdr: lost connection to server")
 
+    // Any client exit: the same screen exit, then "herdr: <reason>".
+    private val EXIT = Regex("\u001b\\[\\?1049l(?:\u001b\\[[0-9;?<> ]*[A-Za-z])*herdr: ")
+
     /** How much of the previous output to keep, so a drop split across reads is still seen. */
     const val CARRY_CHARS = 256
 
     fun dropped(output: CharSequence): Boolean = DROP.containsMatchIn(output)
+
+    /** Whether [output] holds the Herdr client quitting, for any reason (a drop, a stop). */
+    fun exited(output: CharSequence): Boolean = EXIT.containsMatchIn(output)
 }

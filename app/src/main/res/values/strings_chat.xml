@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Agent chat: the focused pane's agent conversation as a phone chat. -->
+<resources>
+	<!-- Herdr panel and chat: label of the key that opens the agent chat -->
+	<string name="chat_open">Chat</string>
+	<!-- Agent chat: content description of the back button that closes the chat -->
+	<string name="chat_close">Close chat</string>
+	<!-- Agent chat: content description of the button that reads the conversation again -->
+	<string name="chat_refresh">Refresh</string>
+	<!-- Agent chat: content description of the button that shows the pane's raw terminal output instead -->
+	<string name="chat_terminal">Terminal output</string>
+	<!-- Agent chat: placeholder of the reply box; %1$s is the agent (claude, codex) -->
+	<string name="chat_reply_hint">Reply to %1$s</string>
+	<!-- Agent chat: the key that sends the reply into the agent's pane -->
+	<string name="chat_send">Send</string>
+	<!-- Agent chat: marker at the end of the conversation while the agent waits on an answer -->
+	<string name="chat_waiting">Waiting for you</string>
+	<!-- Agent chat: answers the waiting agent's prompt with its highlighted option (Enter) -->
+	<string name="chat_approve">Approve</string>
+	<!-- Agent chat: declines the waiting agent's prompt (Esc) -->
+	<string name="chat_deny">Deny</string>
+	<!-- Agent chat: marker at the end of the conversation while the agent works -->
+	<string name="chat_working">Working</string>
+	<!-- Agent chat: marker at the end of the conversation when the agent finished its turn -->
+	<string name="chat_done">Done</string>
+	<!-- Agent chat: marker at the end of the conversation while the agent is idle -->
+	<string name="chat_idle">Idle</string>
+	<!-- Agent chat: note at the top when older messages were left out -->
+	<string name="chat_earlier">Earlier messages not shown</string>
+	<!-- Agent chat: shown when the conversation has no messages yet -->
+	<string name="chat_empty">No messages yet</string>
+	<!-- Agent chat: shown when the focused Herdr pane is not an agent whose conversation can be read -->
+	<string name="chat_not_agent">The focused pane is not a Claude Code or Codex agent. Terminal output shows what it printed.</string>
+	<!-- Agent chat: shown when the agent's transcript file is not on the host -->
+	<string name="chat_no_transcript">This agent\'s transcript is not on the host. Terminal output shows what it printed.</string>
+	<!-- Agent chat: shown when the pane the chat shows closed or now runs another agent session -->
+	<string name="chat_pane_gone">This agent\'s pane is gone or runs another session now. Close the chat and open it again on the agent you want.</string>
+	<!-- Agent chat: a reply was not sent because its pane is gone or changed; the text is back in the reply box -->
+	<string name="chat_not_sent_gone">Not sent: this agent\'s pane is gone or runs another session now. Your reply is back in the box.</string>
+	<!-- Agent chat: sending a reply failed; %1$s is the reason; the text is back in the reply box -->
+	<string name="chat_not_sent_failed">Not sent (%1$s). Your reply is back in the box.</string>
+	<!-- Agent chat: shown when reading the conversation failed; %1$s is the reason -->
+	<string name="chat_read_failed">Could not read the conversation (%1$s).</string>
+	<!-- Agent chat: shown after Approve or Deny when the agent was no longer waiting -->
+	<string name="chat_not_blocked">The agent is no longer waiting.</string>
+	<!-- Agent chat: shown when Approve or Deny did not reach the agent; %1$s is the reason -->
+	<string name="chat_answer_failed">Could not answer: %1$s</string>
+	<!-- Agent chat: state of a tool call that reported an error -->
+	<string name="chat_tool_failed">failed</string>
+	<!-- Agent chat: state of a tool call that has no result yet -->
+	<string name="chat_tool_running">running</string>
+</resources>

@@ -53,6 +53,7 @@ import org.connectbot.terminal.ProgressState
 import org.connectbot.terminal.TerminalEmulator
 import org.connectbot.terminal.TerminalEmulatorFactory
 import org.connectbot.terminal.UrlScanScope
+import org.connectbot.terminal.VTermKey
 import org.connectbot.transport.AbsTransport
 import org.connectbot.transport.SSH
 import org.connectbot.transport.TransportFactory
@@ -62,9 +63,19 @@ import org.connectbot.util.PreferenceConstants
 import org.connectbot.util.TerminalText
 import solutions.ormus.logos.herd.Herd
 import solutions.ormus.logos.herd.HerdSession
+import solutions.ormus.logos.herd.HerdrAction
+import solutions.ormus.logos.herd.HerdrCommands
 import solutions.ormus.logos.herd.HerdrDrop
+import solutions.ormus.logos.herd.HerdrJump
+import solutions.ormus.logos.herd.HerdrKey
+import solutions.ormus.logos.herd.HerdrOnScreen
+import solutions.ormus.logos.herd.HerdrReattach
+import solutions.ormus.logos.herd.HerdrSessions
+import solutions.ormus.logos.herd.HerdrTermKey
 import solutions.ormus.logos.herd.HerdrWorkspacePicker
+import solutions.ormus.logos.herd.JumpTarget
 import solutions.ormus.logos.herd.WorkspacePick
+import solutions.ormus.logos.terminal.TerminalMouse
 import timber.log.Timber
 import java.io.IOException
 import java.nio.charset.Charset
@@ -220,6 +231,17 @@ class TerminalBridge {
     // Rolling plain-text transcript of the same decoded output (last
     // TranscriptBuffer.DEFAULT_MAX_LINES lines), for the full-screen output reader.
     private val transcript = TranscriptBuffer()
+
+    // The mouse reports the program in the terminal asked for, from the same output, so a
+    // tap can reach it as a click (mouseClick).
+    private val mouse = TerminalMouse()
+
+    // Whether the Herdr client is what the terminal shows, from the same output.
+    private val herdrScreen = HerdrOnScreen(mouse)
+
+    /** Whether the Herdr client is on the terminal now: keys for it land in Herdr, not in a shell. */
+    val herdrOnScreen: Boolean
+        get() = herdrScreen.active
 
     // The lines this bridge printed for the current connection attempt
     // ("Connecting to…", host key, auth methods tried, errors). Kept after the
@@ -688,6 +710,15 @@ class TerminalBridge {
     }
 
     /**
+     * Send a left click at the 1-based [col] and [row] when the program in the terminal
+     * asked for mouse reports, in the encoding it asked for. Returns whether one was sent.
+     */
+    fun mouseClick(col: Int, row: Int): Boolean {
+        sendBytes(mouse.click(col, row) ?: return false)
+        return true
+    }
+
+    /**
      * Enqueue a flush after any pending writes. Serialized with writes so the
      * flush happens only after preceding bytes have been sent to the transport.
      */
@@ -713,6 +744,9 @@ class TerminalBridge {
 
         // We no longer need our local output.
         localOutput.clear()
+
+        // A new connection starts with no program asking for the mouse.
+        mouse.reset()
 
         // previously tried vt100 and xterm for emulation modes
         // "screen" works the best for color and escape codes
@@ -753,9 +787,10 @@ class TerminalBridge {
     }
 
     /**
-     * Send the post-login command. When it attaches Herdr and the server has two or
-     * more workspaces, offer them first ([HerdrWorkspacePicker]); every other case,
-     * a slow or failed snapshot included, sends it at once as before.
+     * Send the post-login command. When it attaches Herdr and the host's running Herdr
+     * sessions have two or more workspaces, offer them first ([HerdrWorkspacePicker]); a
+     * workspace in another session attaches that session. Every other case, a slow or
+     * failed snapshot included, sends it at once as before.
      */
     private fun sendPostLogin() {
         val ssh = transport as? SSH
@@ -775,11 +810,18 @@ class TerminalBridge {
             )
             when (pick) {
                 null -> Unit
+
                 WorkspacePick.Attach -> manager.logUsage(UsageActions.HERDR_PICKER_ATTACH)
+
                 WorkspacePick.Dismiss -> manager.logUsage(UsageActions.HERDR_PICKER_DISMISS)
-                is WorkspacePick.Focus -> manager.logUsage(UsageActions.HERDR_PICKER_PICK)
+
+                is WorkspacePick.Focus -> {
+                    manager.logUsage(UsageActions.HERDR_PICKER_PICK)
+                    // Swipes and the Herdr panel act on the session the terminal attaches to.
+                    herd?.attach(pick.session)
+                }
             }
-            injectString(host.postLogin)
+            injectString(host.postLogin?.let { HerdrWorkspacePicker.postLogin(it, pick) })
         }
     }
 
@@ -805,6 +847,9 @@ class TerminalBridge {
         io = dispatchers.io,
         isOnScreen = { manager.isOnScreen(this) },
         onNotices = { manager.onHerdNotices(this, it) },
+        // Through the emulator: libvterm sends ESC O A rather than ESC [ A while the host has
+        // DECCKM on. Its output is posted, so it lands after anything injected before it.
+        sendKey = { terminalEmulator.dispatchKey(0, it.vtermKey) },
     )
 
     /**
@@ -1278,6 +1323,9 @@ class TerminalBridge {
     fun recordOutput(text: CharSequence) {
         if (text.isEmpty()) return
         watchForHerdrDrop(text)
+        watchForHerdrDetach(text)
+        // Scans the mouse modes too.
+        herdrScreen.scan(text)
         transcript.append(text)
         synchronized(activityBuffer) {
             activityBuffer.append(text)
@@ -1307,10 +1355,46 @@ class TerminalBridge {
         if (now - lastHerdrReattach < HERDR_REATTACH_COOLDOWN_MS) return
         lastHerdrReattach = now
         Timber.i("Herdr client dropped on ${host.nickname}; attaching again")
+        // The session the terminal had attached, not always the default.
+        val command = HerdrSessions.attachCommand(herd?.attached?.value ?: HerdrCommands.DEFAULT_SESSION)
         scope.launch {
             delay(HERDR_REATTACH_DELAY_MS)
-            if (transport?.isSessionOpen() == true) injectString("herdr\r")
+            if (transport?.isSessionOpen() == true) injectString("$command\r")
         }
+    }
+
+    // A jump to another Herdr session, between its detach and its attach (jumpToHerdrTab).
+    private val herdrReattach = HerdrReattach()
+
+    /**
+     * Jump to [target] from the Jump to list: focus its tab in its session over the exec
+     * channel, and when that is not the session the terminal shows, leave this one with
+     * Herdr's detach key and attach that one once the client is gone ([HerdrJump.clientLeft]).
+     * Returns why the terminal stays where it is, or null. With [paneId] (an Agents board
+     * card) it focuses that agent's pane, which takes its tab along, instead of the tab.
+     */
+    fun jumpToHerdrTab(target: JumpTarget, paneId: String? = null): String? {
+        val herd = herd ?: return null
+        herd.perform(paneId?.let { HerdrAction.FocusAgent(it) } ?: HerdrAction.FocusTab(target.tabId), session = target.session)
+        if (target.session == herd.attached.value) return null
+        if (!HerdrJump.canReattach(host.postLogin)) return manager.res.getString(R.string.herdr_jump_exec, target.session)
+        val detach = herd.keys.value.bytes(HerdrKey.DETACH) ?: return manager.res.getString(R.string.herdr_jump_no_detach, target.session)
+        herdrReattach.expect(target.session)
+        herd.cancelPrefix()
+        injectString(detach)
+        // A client that never leaves (the key did something else) is not typed into later.
+        scope.launch {
+            delay(HERDR_DETACH_WAIT_MS)
+            herdrReattach.giveUp(target.session)
+        }
+        return null
+    }
+
+    // After jumpToHerdrTab's detach: once the client has left, the shell is back; attach there.
+    private fun watchForHerdrDetach(text: CharSequence) {
+        val session = herdrReattach.onOutput(text) ?: return
+        herd?.attach(session)
+        injectString(HerdrSessions.attachCommand(session) + "\r")
     }
 
     /** Recent output of this session as plain text, oldest line first. */
@@ -1370,6 +1454,9 @@ class TerminalBridge {
 
         /** At most one automatic reattach a minute, so a host that keeps dropping cannot loop. */
         private const val HERDR_REATTACH_COOLDOWN_MS = 60_000L
+
+        /** How long a jump waits for the detached Herdr client to leave before it gives up. */
+        private const val HERDR_DETACH_WAIT_MS = 3_000L
         const val TAG = "CB.TerminalBridge"
 
         private const val DEFAULT_FONT_SIZE_SP = 10
@@ -1394,3 +1481,13 @@ private fun delKeyModeFromProfile(profile: Profile): DelKeyMode = if (profile.de
 } else {
     DelKeyMode.Delete
 }
+
+/** The emulator's key for a key Herdr's switcher reads. */
+internal val HerdrTermKey.vtermKey: Int
+    get() = when (this) {
+        HerdrTermKey.UP -> VTermKey.UP
+        HerdrTermKey.DOWN -> VTermKey.DOWN
+        HerdrTermKey.LEFT -> VTermKey.LEFT
+        HerdrTermKey.RIGHT -> VTermKey.RIGHT
+        HerdrTermKey.ENTER -> VTermKey.ENTER
+    }

@@ -152,6 +152,8 @@
 	<string name="prompt_username">"Username:"</string>
 	<!-- Prompt for user to enter their password to log into the host when using 'password' authentication. -->
 	<string name="prompt_password">"Password:"</string>
+	<!-- Checkbox under the login password prompt: store the password for this host once the server accepts it. -->
+	<string name="prompt_remember_password">"Remember password"</string>
 	<!-- Added after a "Password:" prompt to indicate user needs to confirm entry. -->
 	<string name="prompt_again">"(again)"</string>
 	<!-- Label for the user to select port forward type. -->
@@ -1223,6 +1225,24 @@
 	<string name="herdr_direction_up">up</string>
 	<!-- Herdr command sheet: direction word for an arrow pointing down -->
 	<string name="herdr_direction_down">down</string>
+	<!-- Herdr command sheet: label before the row of Herdr sessions running on the host; the panel acts on the one picked -->
+	<string name="herdr_session_label">Session</string>
+	<!-- Herdr Jump to: the key that opens the list of every tab in every Herdr session -->
+	<string name="herdr_jump_open">Jump to…</string>
+	<!-- Herdr Jump to: placeholder of the search field above the list of tabs -->
+	<string name="herdr_jump_search">Search tabs, workspaces, agents</string>
+	<!-- Herdr Jump to: shown when no tab matches the search -->
+	<string name="herdr_jump_none">No tab matches</string>
+	<!-- Herdr Jump to: where a tab lives under its name; %1$s is the workspace, %2$s the Herdr session -->
+	<string name="herdr_jump_place">%1$s · %2$s</string>
+	<!-- Herdr Jump to: the tab was focused in another Herdr session, but the terminal cannot switch to it because the post-login command runs exec herdr; %1$s is the session -->
+	<string name="herdr_jump_exec">Focused in %1$s. The terminal stays here: its post-login runs exec herdr, so detaching would end the session.</string>
+	<!-- Herdr Jump to: the tab was focused in another Herdr session, but the host binds Herdr's detach to no key Mercurio can send; %1$s is the session -->
+	<string name="herdr_jump_no_detach">Focused in %1$s. The terminal stays here: Herdr\'s detach has no key Mercurio can send.</string>
+	<!-- One-time hint over a Herdr terminal: one finger across moves between Herdr tabs, a fast flick up or down between workspaces -->
+	<string name="herdr_swipe_intro">Swipe ←→ tabs, flick ↑↓ workspaces</string>
+	<!-- One-time hint over a Herdr terminal: the key that puts the hint away for good -->
+	<string name="herdr_swipe_intro_dismiss">Got it</string>
 	<!-- Herdr command sheet: label above the row of tabs in the current workspace to jump to -->
 	<string name="herdr_jump_tabs">Jump to tab</string>
 	<!-- Herdr command sheet: label over the session keys naming the Herdr prefix key Mercurio sends first; %1$s is Herdr's spelling of the key, such as ctrl+b -->
@@ -1290,6 +1310,25 @@
 	<!-- Herdr panel: asks before Restore defaults -->
 	<string name="herdr_confirm_restore">Bring back hidden keys and drop the keys you added or changed?</string>
 
+	<!-- Diff viewer: title, the console menu item and the Herdr panel key that open it -->
+	<string name="diff_title">Diff</string>
+	<!-- Diff viewer: content description of the back button (closes an open file, then the viewer) -->
+	<string name="diff_close">Back</string>
+	<!-- Diff viewer: content description of the button that reads the changes again -->
+	<string name="diff_refresh">Refresh</string>
+	<!-- Diff viewer: shown when the work tree has no changes -->
+	<string name="diff_clean">No changes.</string>
+	<!-- Diff viewer: heading over changes in the index -->
+	<string name="diff_staged">Staged</string>
+	<!-- Diff viewer: heading over changes in the work tree only -->
+	<string name="diff_unstaged">Unstaged</string>
+	<!-- Diff viewer: heading over files git does not track yet -->
+	<string name="diff_untracked">Untracked</string>
+	<!-- Diff viewer: in place of line counts for a binary file -->
+	<string name="diff_binary">binary</string>
+	<!-- Diff viewer: in place of line counts for an untracked file -->
+	<string name="diff_new">new</string>
+
 	<!-- Output reader: content description of the console button that opens a full-screen reader of recent output -->
 	<string name="reader_open">Read output</string>
 	<!-- Output reader: content description of the back button that closes the reader -->
@@ -1315,6 +1354,21 @@
 	<!-- Output reader: warning when reading the agent pane from Herdr failed; %1$s is the error message -->
 	<string name="reader_herdr_failed">Could not read from Herdr (%1$s). Showing this session\'s output instead.</string>
 
+	<!-- Dev tools (diff, files): the host has no live SSH connection to read with -->
+	<string name="devtools_not_connected">Needs a connected SSH session.</string>
+	<!-- Dev tools: the directory to read is gone -->
+	<string name="devtools_no_dir">That directory is not there any more.</string>
+	<!-- Dev tools: the directory is not inside a git repository -->
+	<string name="devtools_not_a_repo">Not a git repository.</string>
+	<!-- Dev tools: git is not installed on the host -->
+	<string name="devtools_no_git">git is not installed on this host.</string>
+	<!-- Dev tools: reading failed; %1$s is the host\'s error, one line -->
+	<string name="devtools_failed">Could not read: %1$s</string>
+	<!-- Dev tools: the output passed the size cap and was cut -->
+	<string name="devtools_truncated">Too big to show whole: cut at the size cap.</string>
+	<!-- Dev tools: the directory read when the session has no Herdr panes (the home directory) -->
+	<string name="devtools_home">~ (home)</string>
+
 	<!-- Session drawer -->
 	<string name="drawer_sessions_title">Sessions</string>
 	<string name="drawer_host_list">Host list</string>
@@ -1323,6 +1377,21 @@
 	<string name="drawer_quick_connect_failed">Couldn\'t connect. Try a saved host name or user@host:port.</string>
 	<!-- Disconnect button content description; %1$s is the session/host name -->
 	<string name="drawer_session_disconnect">Disconnect %1$s</string>
+
+	<!-- File browser: title, and the console menu item that opens it -->
+	<string name="files_title">Files</string>
+	<!-- File browser: content description of the back button (closes an open file, then the browser) -->
+	<string name="files_close">Back</string>
+	<!-- File browser: content description of the button that reads the directory or file again -->
+	<string name="files_refresh">Refresh</string>
+	<!-- File browser: shown for a directory with nothing in it -->
+	<string name="files_empty">Empty directory.</string>
+	<!-- File browser: key that copies the open file\'s full path on the host -->
+	<string name="files_copy_path">Copy path</string>
+	<!-- File browser: key that copies the open file\'s text -->
+	<string name="files_copy_text">Copy text</string>
+	<!-- File browser: in place of a binary file\'s text; %1$d is its size in bytes -->
+	<string name="files_binary">binary, %1$d bytes</string>
 
 	<!-- Machines: Tailscale machines listed in the session drawer and on the host list -->
 	<!-- Heading of the list of machines on the user's Tailscale network -->
@@ -1863,6 +1932,26 @@
 	<string name="slash_source_skill">skill</string>
 	<!-- Slash menu: tag on a command of the project in the session's working directory -->
 	<string name="slash_source_project">project</string>
+	<!-- Dev preview: title, and the console menu item that opens it -->
+	<string name="preview_title">Preview</string>
+	<!-- Dev preview: content description of the back button (back in the page, then to the list) -->
+	<string name="preview_back">Back</string>
+	<!-- Dev preview: content description of the button that closes the preview -->
+	<string name="preview_close">Close preview</string>
+	<!-- Dev preview: content description of the button that reads the listening servers again -->
+	<string name="preview_refresh">Refresh</string>
+	<!-- Dev preview: content description of the button that reloads the page -->
+	<string name="preview_reload">Reload</string>
+	<!-- Dev preview: no dev server is listening on the host -->
+	<string name="preview_empty">No dev server is listening on the host.</string>
+	<!-- Dev preview: the host has neither ss nor lsof to list listening ports -->
+	<string name="preview_no_tool">The host has neither ss nor lsof to list listening ports.</string>
+	<!-- Dev preview: the session is not a connected SSH session -->
+	<string name="preview_not_connected">Needs a connected SSH session.</string>
+	<!-- Dev preview: listing ports failed; %1$s is the host\'s error, one line -->
+	<string name="preview_failed">Could not read: %1$s</string>
+	<!-- Dev preview: the SSH port forward could not start; %1$s is the error -->
+	<string name="preview_forward_failed">Could not forward the port: %1$s</string>
 	<!-- Command palette: content description of the search icon in the console top bar that opens the palette -->
 	<string name="palette_open">Search everything</string>
 	<!-- Command palette: placeholder of its one search field -->
@@ -1919,6 +2008,8 @@
 	<string name="swipe_hint_prev_workspace">Previous workspace</string>
 	<!-- Hint over the terminal after a two-finger swipe up moved to the next Herdr workspace -->
 	<string name="swipe_hint_next_workspace">Next workspace</string>
+	<!-- Hint over the terminal when a swipe sent no keys because the Herdr client is not what the terminal shows (a shell prompt, for one) -->
+	<string name="swipe_hint_herdr_not_on_screen">Herdr not on screen</string>
 	<!-- Command palette: subtitle of a key result -->
 	<string name="palette_subtitle_key">Compose bar key</string>
 	<!-- Command palette: subtitle of a slash command result; %1$s is the agent name, %2$s says where it comes from (built-in, command, skill, project) -->

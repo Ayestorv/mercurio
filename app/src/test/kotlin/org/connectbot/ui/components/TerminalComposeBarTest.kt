@@ -32,16 +32,21 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -66,6 +71,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
+import org.mockito.Mockito.any
 import org.mockito.Mockito.atLeast
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
@@ -73,7 +79,13 @@ import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import solutions.ormus.logos.herd.HerdSession
+import solutions.ormus.logos.herd.HerdrAgentInfo
+import solutions.ormus.logos.herd.HerdrAgentStatus
 import solutions.ormus.logos.herd.HerdrKeys
+import solutions.ormus.logos.herd.HerdrSessionSnapshot
+import solutions.ormus.logos.herd.HerdrTabInfo
+import solutions.ormus.logos.herd.HerdrWorkspaceInfo
+import solutions.ormus.logos.herd.JumpTarget
 import solutions.ormus.logos.herd.parseHerdrSnapshot
 
 /**
@@ -112,7 +124,47 @@ class TerminalComposeBarTest {
         `when`(herd.snapshot).thenReturn(MutableStateFlow(snapshot))
         `when`(herd.result).thenReturn(MutableStateFlow(null))
         `when`(herd.failure).thenReturn(MutableStateFlow(null))
+        `when`(herd.sessions).thenReturn(MutableStateFlow(listOf("default")))
+        `when`(herd.chosen).thenReturn(MutableStateFlow("default"))
+        `when`(herd.others).thenReturn(MutableStateFlow(emptyMap()))
+        `when`(herd.attached).thenReturn(MutableStateFlow("default"))
         // Sun's prefix, read from its Herdr config.
+        `when`(herd.keys).thenReturn(MutableStateFlow(HerdrKeys.fromConfig("[keys]\nprefix = \"ctrl+space\"\n")))
+        `when`(bridge.herd).thenReturn(herd)
+        return bridge
+    }
+
+    /**
+     * A Herdr bridge whose default session has a blocked claude in w1 and the focus on a
+     * working one in w2, and whose "work" session (attached: [attached]) has a blocked grok.
+     */
+    private fun herdrBridgeWithWaitingAgents(blockedInDefault: Boolean = true, blockedInWork: Boolean = true, attached: String = "default"): TerminalBridge {
+        val bridge = bridgeWithPostLogin("herdr\n")
+        fun agent(pane: String, tab: String, kind: String, blocked: Boolean) = HerdrAgentInfo(paneId = pane, workspaceId = tab.substringBefore(':'), tabId = tab, agent = kind, agentStatus = if (blocked) HerdrAgentStatus.BLOCKED else HerdrAgentStatus.WORKING)
+        val main = HerdrSessionSnapshot(
+            workspaces = listOf(HerdrWorkspaceInfo("w1", label = "alpha", number = 1), HerdrWorkspaceInfo("w2", label = "beta", number = 2)),
+            tabs = listOf(HerdrTabInfo("w1:t1", workspaceId = "w1", label = "build", number = 1), HerdrTabInfo("w2:t1", workspaceId = "w2", label = "tests", number = 1)),
+            agents = listOf(agent("w1:p1", "w1:t1", "claude", blockedInDefault), agent("w2:p1", "w2:t1", "codex", false)),
+            focusedWorkspaceId = "w2",
+            focusedTabId = "w2:t1",
+            focusedPaneId = "w2:p1",
+        )
+        val work = HerdrSessionSnapshot(
+            workspaces = listOf(HerdrWorkspaceInfo("w1", label = "gamma", number = 1)),
+            tabs = listOf(HerdrTabInfo("w1:t1", workspaceId = "w1", label = "review", number = 1)),
+            agents = listOf(agent("w1:p1", "w1:t1", "grok", blockedInWork)),
+            focusedWorkspaceId = "w1",
+            focusedTabId = "w1:t1",
+            focusedPaneId = "w1:p1",
+        )
+        val herd = mock(HerdSession::class.java)
+        `when`(herd.snapshot).thenReturn(MutableStateFlow(main))
+        `when`(herd.result).thenReturn(MutableStateFlow(null))
+        `when`(herd.failure).thenReturn(MutableStateFlow(null))
+        `when`(herd.sessions).thenReturn(MutableStateFlow(listOf("default", "work")))
+        `when`(herd.chosen).thenReturn(MutableStateFlow(attached))
+        `when`(herd.others).thenReturn(MutableStateFlow(mapOf("work" to work)))
+        `when`(herd.attached).thenReturn(MutableStateFlow(attached))
         `when`(herd.keys).thenReturn(MutableStateFlow(HerdrKeys.fromConfig("[keys]\nprefix = \"ctrl+space\"\n")))
         `when`(bridge.herd).thenReturn(herd)
         return bridge
@@ -135,6 +187,7 @@ class TerminalComposeBarTest {
         draft: DictationDraft = DictationDraft(),
         recentOutput: String = "",
         lastReply: String? = null,
+        onBoard: (() -> Unit)? = null,
     ) {
         composeTestRule.setContent {
             ConnectBotTheme {
@@ -154,6 +207,7 @@ class TerminalComposeBarTest {
                             },
                             onPasteScreenshot = onPasteScreenshot,
                             onSlashMenu = onSlashMenu,
+                            onBoard = onBoard,
                             draft = draft,
                             readRecentOutput = { recentOutput },
                             readLastReply = { lastReply },
@@ -223,21 +277,19 @@ class TerminalComposeBarTest {
     // Row 1.
 
     @Test
-    fun herdrHost_row1_pageKeysMoreThenTabSwitchers() {
+    fun herdrHost_row1_pageKeysMoreThenNeedsYou() {
         setBar(bridgeWithPostLogin("herdr\n"), herdrPanel = true, onSlashMenu = {})
 
-        assertRowOrder("↑", "↓", "Herdr", MORE, "Previous tab", "Next tab")
-        // The tab switchers are bare arrows, with no "tab" label.
-        composeTestRule.onAllNodesWithText("‹tab").assertCountEquals0()
-        composeTestRule.onAllNodesWithText("tab›").assertCountEquals0()
-        key("Previous tab").assertTextEquals("←")
-        key("Next tab").assertTextEquals("→")
+        assertRowOrder("↑", "↓", "Herdr", MORE, NEEDS_YOU)
+        // The tab arrows are gone: swipes switch tabs, Jump to sits in the Herdr panel.
+        composeTestRule.onAllNodesWithContentDescription("Previous tab").assertCountEquals0()
+        composeTestRule.onAllNodesWithContentDescription("Next tab").assertCountEquals0()
+        assertComfortable(NEEDS_YOU)
         // ↑ and ↓ keep their glyphs but page.
         key("PgUp").assertIsDisplayed()
         key("PgDn").assertIsDisplayed()
         // / waits in the tray.
         composeTestRule.onAllNodesWithText("/").assertCountEquals0()
-        composeTestRule.onAllNodesWithText("Needs you").assertCountEquals0()
         composeTestRule.onAllNodesWithText("Ctrl").assertCountEquals0()
         composeTestRule.onAllNodesWithText("Goto").assertCountEquals0()
         composeTestRule.onAllNodesWithText("Mode").assertCountEquals0()
@@ -248,10 +300,9 @@ class TerminalComposeBarTest {
         setBar(bridgeWithPostLogin(null), herdrPanel = true)
 
         // The same row as on Sun; the Herdr keys wait, dimmed, for Herdr to answer.
-        assertRowOrder("↑", "↓", "Herdr", MORE, "Previous tab", "Next tab")
+        assertRowOrder("↑", "↓", "Herdr", MORE, NEEDS_YOU)
         key("Herdr").assertIsNotEnabled()
-        key("Previous tab").assertIsNotEnabled()
-        key("Next tab").assertIsNotEnabled()
+        key(NEEDS_YOU).assertIsNotEnabled()
         // Ctrl lives in the tray on every host.
         composeTestRule.onAllNodesWithText("Ctrl").assertCountEquals0()
     }
@@ -264,8 +315,7 @@ class TerminalComposeBarTest {
         setBar(bridge, herdrPanel = true)
 
         key("Herdr").assertIsEnabled()
-        key("Next tab").assertIsEnabled().performClick()
-        assertEquals(listOf(NUL + "n"), sentBytes(bridge))
+        key(NEEDS_YOU).assertIsEnabled()
         key("Herdr").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(HERDR_PANEL_TEST_TAG).assertIsDisplayed()
@@ -285,28 +335,84 @@ class TerminalComposeBarTest {
     }
 
     @Test
-    fun herdrHost_row2_escTabFieldEnter_tabSwitchersSitAboveEnter() {
+    fun herdrHost_row2_escTabFieldEnter_needsYouSitsAboveEnter() {
         setBar(bridgeWithPostLogin("herdr\n"), onSlashMenu = {})
 
         assertRowOrder("Esc", "Tab", ENTER)
         assertFieldBetween("Tab", ENTER)
-        val next = key("Next tab").fetchSemanticsNode().boundsInRoot
+        val needsYou = key(NEEDS_YOU).fetchSemanticsNode().boundsInRoot
         val enter = key(ENTER).fetchSemanticsNode().boundsInRoot
-        assertTrue("Next tab is above ⏎", next.bottom <= enter.top + 0.5f)
-        assertTrue("Next tab lines up over ⏎", next.right > enter.left && next.left < enter.right)
+        assertTrue("Needs you is above ⏎", needsYou.bottom <= enter.top + 0.5f)
+        assertTrue("Needs you lines up over ⏎", needsYou.right > enter.left && needsYou.left < enter.right)
     }
 
     @Test
-    fun row1_tabSwitchersSendHerdrPrevAndNextTab() {
-        val bridge = bridgeWithPostLogin("herdr\n")
-        setBar(bridge)
+    fun needsYou_countsWaitingAgentsInEverySession_andGoesGold() {
+        setBar(herdrBridgeWithWaitingAgents(), onBoard = {})
 
-        key("Previous tab").performClick()
-        key("Next tab").performClick()
+        key("Needs you, 2 waiting").assertIsEnabled().assertTextEquals("Needs you · 2")
+    }
 
-        // No Herdr side on this mock bridge: Herdr's default prefix, Ctrl+B.
-        assertEquals(listOf(CTRL_B + "p", CTRL_B + "n"), sentBytes(bridge))
-        assertEquals(listOf(UsageActions.HERDR_PREV_TAB, UsageActions.HERDR_NEXT_TAB), logged)
+    @Test
+    fun needsYou_tap_jumpsToTheNextWaitingAgentAfterTheFocus_andSendsNothing() {
+        // The focus is on beta's working codex: the default's waiting claude is behind it, so
+        // the next one is the grok waiting in work.
+        val bridge = herdrBridgeWithWaitingAgents()
+        var boards = 0
+        setBar(bridge, onBoard = { boards++ })
+
+        key("Needs you, 2 waiting").performClick()
+        composeTestRule.waitForIdle()
+
+        val target = ArgumentCaptor.forClass(JumpTarget::class.java)
+        val pane = ArgumentCaptor.forClass(String::class.java)
+        verify(bridge).jumpToHerdrTab(target.capture() ?: JUMP, pane.capture() ?: "")
+        assertEquals("work", target.value.session)
+        assertEquals("w1:t1", target.value.tabId)
+        assertEquals("w1:p1", pane.value)
+        assertEquals(0, boards)
+        assertEquals(emptyList<String>(), sentBytes(bridge))
+        assertEquals(listOf(UsageActions.NEEDS_YOU_JUMP), logged)
+    }
+
+    @Test
+    fun needsYou_tapWithNoneWaiting_opensTheBoard() {
+        val bridge = herdrBridgeWithWaitingAgents(blockedInDefault = false, blockedInWork = false)
+        var boards = 0
+        setBar(bridge, onBoard = { boards++ })
+
+        key("Needs you, 0 waiting").assertTextEquals("Needs you").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals(1, boards)
+        verify(bridge, never()).jumpToHerdrTab(any(JumpTarget::class.java) ?: JUMP, any())
+        assertEquals(listOf(UsageActions.NEEDS_YOU_BOARD), logged)
+    }
+
+    @Test
+    fun needsYou_longPress_opensTheBoard_evenWithAgentsWaiting() {
+        val bridge = herdrBridgeWithWaitingAgents()
+        var boards = 0
+        setBar(bridge, onBoard = { boards++ })
+
+        key("Needs you, 2 waiting").performTouchInput { longClick() }
+        composeTestRule.waitForIdle()
+
+        assertEquals(1, boards)
+        assertEquals(listOf(UsageActions.NEEDS_YOU_BOARD), logged)
+    }
+
+    @Test
+    fun needsYou_onAPlainHost_takesNoTapAndNoLongPress() {
+        var boards = 0
+        setBar(bridgeWithPostLogin(null), onBoard = { boards++ })
+
+        key(NEEDS_YOU).performClick()
+        key(NEEDS_YOU).performTouchInput { longClick() }
+        composeTestRule.waitForIdle()
+
+        assertEquals(0, boards)
+        assertEquals(emptyList<String>(), logged)
     }
 
     @Test
@@ -409,7 +515,7 @@ class TerminalComposeBarTest {
         setBar(bridgeWithPostLogin("herdr\n"))
 
         key("Herdr").assertIsNotEnabled()
-        assertRowOrder("↑", "↓", "Herdr", MORE, "Previous tab", "Next tab")
+        assertRowOrder("↑", "↓", "Herdr", MORE, NEEDS_YOU)
         assertComfortable("Herdr")
     }
 
@@ -529,11 +635,12 @@ class TerminalComposeBarTest {
         listOf("Left", "Up", "Down", "Right", "Mode", READ, "Sidebar").forEach {
             key(it).assertIsDisplayed()
         }
-        // The keys Ormus never used are gone from the tray (Needs you, Goto and copy mode
-        // live in the Herdr panel).
-        listOf("Stop", "Ctrl", "y", "n", "Needs you", "Goto", "Scroll").forEach {
+        // The keys Ormus never used are gone from the tray (Goto and copy mode live in the
+        // Herdr panel; Needs you sits on row 1, outside the tray).
+        listOf("Stop", "Ctrl", "y", "n", "Goto", "Scroll").forEach {
             composeTestRule.onAllNodesWithText(it).assertCountEquals0()
         }
+        composeTestRule.onNodeWithTag(TRAY_TEST_TAG).assert(hasAnyDescendant(hasText("Needs you")).not())
 
         more().performClick()
         assertTrayClosed()
@@ -757,7 +864,7 @@ class TerminalComposeBarTest {
             onPasteScreenshot = { null },
             onSlashMenu = {},
         )
-        listOf("↑", "↓", "Herdr", MORE, "Previous tab", "Next tab", "Esc", "Tab", ENTER).forEach { assertComfortable(it) }
+        listOf("↑", "↓", "Herdr", MORE, NEEDS_YOU, "Esc", "Tab", ENTER).forEach { assertComfortable(it) }
         openTray()
         listOf("Left", "Up", "Down", "Right", "Jump to bottom", "Mode", "Clear", READ, "Copy latest URL", "Copy last reply", PASTE, "Sidebar", "/")
             .forEach { assertComfortable(it) }
@@ -766,7 +873,7 @@ class TerminalComposeBarTest {
     @Test
     fun plainHost_everyBarKey_isAtLeast44dpWide() {
         setBar(bridgeWithPostLogin(null))
-        listOf("↑", "↓", "Herdr", MORE, "Previous tab", "Next tab", "Esc", "Tab", ENTER).forEach { assertComfortable(it) }
+        listOf("↑", "↓", "Herdr", MORE, NEEDS_YOU, "Esc", "Tab", ENTER).forEach { assertComfortable(it) }
     }
 
     private fun androidx.compose.ui.test.SemanticsNodeInteractionCollection.assertCountEquals0() {
@@ -781,6 +888,10 @@ class TerminalComposeBarTest {
         const val ENTER = "Enter"
         const val PASTE = "Paste latest screenshot"
         val PHONE_WIDTH = 411.dp
+        const val NEEDS_YOU = "Needs you"
+
+        // Stands in for Mockito's matchers, which return null for Kotlin's non-null parameters.
+        val JUMP = JumpTarget("", "", "", 0, "", 0, null, HerdrAgentStatus.UNKNOWN, false)
 
         val NUL: String = 0.toChar().toString()
         val CTRL_B: String = 2.toChar().toString()

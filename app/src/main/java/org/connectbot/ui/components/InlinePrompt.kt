@@ -30,12 +30,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -64,6 +67,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -123,7 +127,8 @@ fun InlinePrompt(
                     instructions = promptRequest.instructions,
                     hint = promptRequest.hint,
                     isPassword = promptRequest.isPassword,
-                    onSubmit = { value -> onResponse(PromptResponse.StringResponse(value)) },
+                    offerRemember = promptRequest.offerRemember,
+                    onSubmit = { value, remember -> onResponse(PromptResponse.StringResponse(value, remember)) },
                     onCancel = onCancel,
                 )
             }
@@ -222,10 +227,13 @@ private fun StringPromptContent(
     instructions: String?,
     hint: String?,
     isPassword: Boolean,
-    onSubmit: (String) -> Unit,
+    offerRemember: Boolean,
+    onSubmit: (String, Boolean) -> Unit,
     onCancel: () -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
+    // Ticked to start: a password typed here is kept for the next connect.
+    var rememberPassword by remember { mutableStateOf(true) }
     val focusRequester = remember { FocusRequester() }
     val terminalColors = MaterialTheme.colorScheme.terminal
 
@@ -267,7 +275,7 @@ private fun StringPromptContent(
                 ),
                 keyboardActions = KeyboardActions(
                     onDone = {
-                        onSubmit(text)
+                        onSubmit(text, offerRemember && rememberPassword)
                     },
                 ),
                 singleLine = true,
@@ -284,6 +292,35 @@ private fun StringPromptContent(
                     .fillMaxWidth()
                     .focusRequester(focusRequester),
             )
+
+            if (offerRemember) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .toggleable(
+                            value = rememberPassword,
+                            role = Role.Checkbox,
+                            onValueChange = { rememberPassword = it },
+                        ),
+                ) {
+                    Checkbox(
+                        checked = rememberPassword,
+                        onCheckedChange = null,
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = terminalColors.overlayTextSecondary,
+                            uncheckedColor = terminalColors.overlayTextSecondary,
+                            checkmarkColor = terminalColors.overlayBackground,
+                        ),
+                    )
+                    Text(
+                        text = stringResource(R.string.prompt_remember_password),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = terminalColors.overlayText,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
         }
 
         Row(
@@ -297,7 +334,7 @@ private fun StringPromptContent(
             }
             Button(
                 shape = OrmusCornerShape,
-                onClick = { onSubmit(text) },
+                onClick = { onSubmit(text, offerRemember && rememberPassword) },
                 modifier = Modifier.padding(start = 8.dp),
             ) {
                 Text(stringResource(R.string.button_ok))

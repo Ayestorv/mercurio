@@ -68,22 +68,32 @@ class PromptManager {
         instructions: String?,
         hint: String?,
         isPassword: Boolean = false,
-    ): String? {
+    ): String? = askString(PromptRequest.StringPrompt(instructions, hint, isPassword))?.value
+
+    /**
+     * Ask for a host's login password. With [offerRemember] the prompt carries a
+     * "Remember password" box, ticked to start. Null when the prompt was cancelled.
+     */
+    suspend fun requestPasswordPrompt(
+        instructions: String?,
+        hint: String?,
+        offerRemember: Boolean,
+    ): PasswordAnswer? {
+        val response = askString(PromptRequest.StringPrompt(instructions, hint, isPassword = true, offerRemember))
+        val password = response?.value ?: return null
+        return PasswordAnswer(password, remember = offerRemember && response.remember)
+    }
+
+    private suspend fun askString(request: PromptRequest.StringPrompt): PromptResponse.StringResponse? {
         val deferred = CompletableDeferred<PromptResponse>()
         currentDeferred = deferred
 
-        _promptState.update {
-            PromptRequest.StringPrompt(
-                instructions = instructions,
-                hint = hint,
-                isPassword = isPassword,
-            )
-        }
+        _promptState.update { request }
 
         val response = deferred.await()
         _promptState.update { null }
 
-        return (response as? PromptResponse.StringResponse)?.value
+        return response as? PromptResponse.StringResponse
     }
 
     /**
@@ -196,6 +206,8 @@ sealed class PromptRequest {
         val instructions: String?,
         val hint: String?,
         val isPassword: Boolean,
+        /** Show the "Remember password" box (a saved host's login password only). */
+        val offerRemember: Boolean = false,
     ) : PromptRequest()
 
     /** The connect-time Herdr workspace picker. */
@@ -250,7 +262,12 @@ sealed class PromptRequest {
  */
 sealed class PromptResponse {
     data class BooleanResponse(val value: Boolean) : PromptResponse()
-    data class StringResponse(val value: String?) : PromptResponse()
+    data class StringResponse(val value: String?, val remember: Boolean = false) : PromptResponse()
     data class BiometricResponse(val success: Boolean) : PromptResponse()
     data class HerdrWorkspaceResponse(val pick: WorkspacePick) : PromptResponse()
+}
+
+/** A password typed at a login prompt, and whether "Remember password" was ticked. */
+class PasswordAnswer(val password: String, val remember: Boolean) {
+    override fun toString(): String = "PasswordAnswer(remember=$remember)"
 }

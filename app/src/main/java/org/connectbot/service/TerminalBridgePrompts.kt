@@ -76,6 +76,27 @@ fun TerminalBridge.requestStringPrompt(
 }
 
 /**
+ * Request a host's login password, with a "Remember password" box when
+ * [offerRemember] is true.
+ *
+ * @return the typed password and the box's state, or null if cancelled
+ */
+fun TerminalBridge.requestPasswordPrompt(
+    instructions: String?,
+    hint: String?,
+    offerRemember: Boolean,
+): PasswordAnswer? {
+    return try {
+        runBlocking {
+            promptManager.requestPasswordPrompt(instructions, hint, offerRemember)
+        }
+    } catch (e: CancellationException) {
+        Timber.w("Attempted prompt on a closed stream.")
+        return null
+    }
+}
+
+/**
  * Request biometric authentication for an Android Keystore key.
  *
  * @param keyNickname The nickname of the key for display

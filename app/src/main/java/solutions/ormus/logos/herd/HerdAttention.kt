@@ -40,11 +40,12 @@ class HerdAttention(
     private val holdMs: Long = HOLD_MS,
     private val repeatWindowMs: Long = REPEAT_WINDOW_MS,
 ) {
-    /** One notification to post, about [agent], with where it lives. */
+    /** One notification to post, about [agent] in Herdr [session], with where it lives. */
     sealed interface Notice {
         val agent: HerdrAgentInfo
         val workspaceLabel: String?
         val tabLabel: String?
+        val session: String
 
         /** [paneTail]: the last lines of the blocked pane, what Approve would answer. */
         data class NeedsYou(
@@ -52,12 +53,14 @@ class HerdAttention(
             override val workspaceLabel: String?,
             override val tabLabel: String?,
             val paneTail: String? = null,
+            override val session: String = HerdrCommands.DEFAULT_SESSION,
         ) : Notice
 
         data class Finished(
             override val agent: HerdrAgentInfo,
             override val workspaceLabel: String?,
             override val tabLabel: String?,
+            override val session: String = HerdrCommands.DEFAULT_SESSION,
         ) : Notice
     }
 

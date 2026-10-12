@@ -26,6 +26,7 @@ import solutions.ormus.logos.herd.Herd
 import solutions.ormus.logos.herd.HerdAttention
 import solutions.ormus.logos.herd.HerdrAgentInfo
 import solutions.ormus.logos.herd.HerdrAgentStatus
+import solutions.ormus.logos.herd.HerdrCommands
 
 /**
  * One push from a Herdr host's watcher (`host/mercurio-push-watch`, schema `v: 1`):
@@ -62,9 +63,10 @@ data class HerdPushAlert(
             agent = agent?.ifBlank { null },
             agentStatus = state,
         )
+        val herdrSession = session ?: HerdrCommands.DEFAULT_SESSION
         return when (state) {
-            HerdrAgentStatus.BLOCKED -> HerdAttention.Notice.NeedsYou(agent, workspace?.ifBlank { null }, tab?.ifBlank { null })
-            HerdrAgentStatus.DONE -> HerdAttention.Notice.Finished(agent, workspace?.ifBlank { null }, tab?.ifBlank { null })
+            HerdrAgentStatus.BLOCKED -> HerdAttention.Notice.NeedsYou(agent, workspace?.ifBlank { null }, tab?.ifBlank { null }, session = herdrSession)
+            HerdrAgentStatus.DONE -> HerdAttention.Notice.Finished(agent, workspace?.ifBlank { null }, tab?.ifBlank { null }, session = herdrSession)
             else -> null
         }
     }
@@ -73,12 +75,9 @@ data class HerdPushAlert(
         const val VERSION = 1
         const val EVENT = "pane.agent_status_changed"
 
-        // Mercurio's Herdr commands all talk to the default session, and pane ids are per
-        // session: an alert from another session could name a different pane here.
-        private const val DEFAULT_SESSION = "default"
-
-        // Herdr pane ids, as HerdApproval checks them.
-        private val PANE_ID = Regex("[A-Za-z0-9_.:-]+")
+        // Herdr pane ids and session names, as HerdApproval and HerdrSessions check them.
+        // Pane ids repeat across sessions, so the alert's session travels with its pane.
+        private val ID = Regex("[A-Za-z0-9_.:-]+")
 
         private val json = Json {
             ignoreUnknownKeys = true
@@ -91,8 +90,8 @@ data class HerdPushAlert(
             val usable = alert.v == VERSION &&
                 alert.event == EVENT &&
                 alert.host.isNotBlank() &&
-                PANE_ID.matches(alert.paneId) &&
-                (alert.session == null || alert.session == DEFAULT_SESSION)
+                ID.matches(alert.paneId) &&
+                (alert.session == null || ID.matches(alert.session))
             return alert.takeIf { usable }
         }
 

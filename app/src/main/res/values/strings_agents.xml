@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Agents board: every agent of every Herdr session on the host, by what it needs from you. -->
+<resources>
+	<!-- Herdr panel: the key that opens the Agents board when no agent needs you -->
+	<string name="board_open">Board</string>
+	<!-- Herdr panel: the key that opens the Agents board; %1$d is how many agents need you -->
+	<string name="board_open_count">Board · %1$d</string>
+	<!-- Compose bar, row 1: the key that jumps to the next agent waiting for the user, when none waits -->
+	<string name="needs_you_key">Needs you</string>
+	<!-- Compose bar, row 1: the same key while agents wait; %1$d is how many -->
+	<string name="needs_you_key_count">Needs you · %1$d</string>
+	<!-- Compose bar, row 1: what a screen reader says for the key; %1$d is how many agents wait (0 or more) -->
+	<string name="needs_you_key_description">Needs you, %1$d waiting</string>
+	<!-- Agents board: title -->
+	<string name="board_title">Agents</string>
+	<!-- Agents board: content description of the back button -->
+	<string name="board_close">Close agents board</string>
+	<!-- Agents board: content description of the button that reads every Herdr session again -->
+	<string name="board_refresh">Refresh agents</string>
+	<!-- Agents board: section of blocked agents waiting for an answer -->
+	<string name="board_needs_you">Needs you</string>
+	<!-- Agents board: section of agents at work -->
+	<string name="board_working">Working</string>
+	<!-- Agents board: section of agents that finished and were not looked at yet -->
+	<string name="board_done">Done</string>
+	<!-- Agents board: section of idle agents -->
+	<string name="board_idle">Idle</string>
+	<!-- Agents board: a section header; %1$s is the section, %2$d how many agents are in it -->
+	<string name="board_section">%1$s · %2$d</string>
+	<!-- Agents board: an empty Needs you section -->
+	<string name="board_needs_you_empty">Nothing waits on you</string>
+	<!-- Agents board: an empty Working section -->
+	<string name="board_working_empty">No agent is working</string>
+	<!-- Agents board: an empty Done section -->
+	<string name="board_done_empty">Nothing finished unseen</string>
+	<!-- Agents board: an empty Idle section -->
+	<string name="board_idle_empty">No idle agents</string>
+	<!-- Agents board: shown until the first Herdr snapshot arrives -->
+	<string name="board_loading">Reading agents from Herdr…</string>
+	<!-- Agents board: shown when no Herdr session runs an agent -->
+	<string name="board_empty">No agents are running in any Herdr session.</string>
+	<!-- Agents board: an agent card with no agent kind -->
+	<string name="board_agent">agent</string>
+	<!-- Agents board: content description of the key that shows a card's screen and context use -->
+	<string name="board_more">Show screen</string>
+	<!-- Agents board: content description of the key that folds a card again -->
+	<string name="board_less">Hide screen</string>
+	<!-- Agents board: an open card while its screen is read -->
+	<string name="board_reading">Reading the screen…</string>
+	<!-- Agents board: an open card whose screen could not be read -->
+	<string name="board_read_failed">The screen could not be read.</string>
+	<!-- Agents board: an open card's context use; %1$d is the percent of the context window used -->
+	<string name="board_context">ctx %1$d%%</string>
+	<!-- Agents board: an open card's context use with tokens; %1$d is the percent, %2$s used/limit such as 137k/200k -->
+	<string name="board_context_detail">ctx %1$d%% · %2$s</string>
+	<!-- Agents board: Approve or Deny found the agent no longer waiting, so nothing was sent -->
+	<string name="board_answer_not_blocked">It no longer waits for an answer; nothing was sent.</string>
+	<!-- Agents board: Approve or Deny failed; %1$s is the reason, one line -->
+	<string name="board_answer_failed">Not sent: %1$s</string>
+</resources>

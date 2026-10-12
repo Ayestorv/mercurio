@@ -16,6 +16,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parent.parent / "mercurio-push-watch"
 
@@ -206,6 +207,76 @@ class WatchTest(unittest.TestCase):
         self.assertTrue(wait_for(lambda: self.posts))
 
 
+class SessionsTest(unittest.TestCase):
+    """Every running Herdr session is followed, each push names its session."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": self.tmp.name})
+        self.env.start()
+        os.environ.pop("HERDR_SOCKET_PATH", None)
+        self.herdr = os.path.join(self.tmp.name, "herdr")
+        os.makedirs(os.path.join(self.herdr, "sessions"))
+        self.endpoints = os.path.join(self.tmp.name, "push-endpoints")
+        Path(self.endpoints).write_text("https://push.example/upAbc\n")
+        self.servers = {}
+        self.posts = []
+
+    def tearDown(self):
+        for server in self.servers.values():
+            if server.streams:
+                server.send(None)
+            server.close()
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def serve(self, name):
+        path = pw.herdr_socket(name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        server = FakeHerdr(path)
+        server.panes = [pane("w1:p1", "working")]
+        self.servers[name] = server
+        return server
+
+    def make(self, sock_path, session):
+        post = lambda url, body: self.posts.append(json.loads(body)) or 200  # noqa: E731
+        return pw.Watcher(sock_path, session, "sun", ["blocked"], 20.0, self.endpoints, post=post)
+
+    def test_finds_running_sessions_and_skips_a_stale_socket(self):
+        self.serve("default")
+        self.serve("work")
+        stale = pw.herdr_socket("old")
+        os.makedirs(os.path.dirname(stale))
+        Path(stale).touch()
+        self.assertEqual(sorted(pw.herdr_sessions()), ["default", "old", "work"])
+        self.assertFalse(pw.running(stale))
+        sessions = pw.Sessions(self.make)
+        sessions.scan()
+        self.assertEqual(sorted(sessions.threads), ["default", "work"])
+
+    def test_each_session_pushes_under_its_own_name(self):
+        default, work = self.serve("default"), self.serve("work")
+        pw.Sessions(self.make).scan()
+        self.assertTrue(wait_for(lambda: default.subscribes and work.subscribes))
+        work.status("w1:p1", "blocked")
+        self.assertTrue(wait_for(lambda: self.posts))
+        default.status("w1:p1", "blocked")
+        self.assertTrue(wait_for(lambda: len(self.posts) == 2))
+        # The same pane id in two sessions: two pushes, told apart by the session.
+        self.assertEqual([(b["session"], b["pane_id"]) for b in self.posts], [("work", "w1:p1"), ("default", "w1:p1")])
+
+    def test_a_rescan_adds_a_new_session_once(self):
+        self.serve("default")
+        sessions = pw.Sessions(self.make)
+        sessions.scan()
+        first = sessions.threads["default"]
+        late = self.serve("late")
+        sessions.scan()
+        self.assertIs(sessions.threads["default"], first)
+        self.assertIn("late", sessions.threads)
+        self.assertTrue(wait_for(lambda: late.subscribes))
+
+
 class NoHerdrTest(unittest.TestCase):
     def test_exits_cleanly_without_herdr(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -213,6 +284,10 @@ class NoHerdrTest(unittest.TestCase):
                 os.path.join(tmp, "missing", "herdr.sock"), "default", "sun", ["blocked"], 20.0, os.path.join(tmp, "e")
             )
             self.assertEqual(watcher.run(), 0)
+
+    def test_sessions_exit_cleanly_without_herdr(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp}):
+            self.assertEqual(pw.Sessions(lambda sock, name: None).run(), 0)
 
     def test_endpoints_file(self):
         with tempfile.TemporaryDirectory() as tmp:

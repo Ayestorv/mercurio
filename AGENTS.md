@@ -1,5 +1,7 @@
 # Repository guidelines
 
+The rules live in [garden/DNA.md](garden/DNA.md): purpose, evidence, growth rules, proof surfaces, refusals and what done means, each with an id. This file is the map of the repo and its build; when the two disagree, the DNA wins. [garden/merge-policy.yml](garden/merge-policy.yml) says what merges on its own and what waits for the operator.
+
 ## Project structure
 
 Mercurio is an Android SSH client for driving AI coding agents in Herdr, forked from ConnectBot. It is a Gradle project with one product flavor, `oss`. The app lives in `app/`. ConnectBot's code and most of the app sit under `app/src/main/java/org/connectbot`: UI in `ui/`, data and Room in `data/`, dependency injection in `di/`, terminal and service code in `service/`, protocol code in `transport/`, the usage log in `usage/`. Mercurio-only features sit under `app/src/main/java/solutions/ormus/logos`: Herdr in `herd/`, push in `push/`, agent commands in `commands/`. Resources are in `app/src/main/res`, Room schemas in `app/schemas`. Unit tests are in `app/src/test/kotlin`, instrumentation tests in `app/src/androidTest`, shared test helpers in `app/src/sharedTest/kotlin`. `scripts/` holds the usage log readers, `host/` the push watcher for Herdr hosts, `docs/` the design notes.

@@ -23,4 +23,4 @@ Open an issue on [Ormus-Solutions/mercurio](https://github.com/Ormus-Solutions/m
    `./gradlew spotlessApply` fixes formatting.
 6. Open the pull request against `main` on Ormus-Solutions/mercurio. Say what changed and why, name the tests, and add screenshots for visible UI changes.
 
-[AGENTS.md](AGENTS.md) has the code layout and style rules.
+[garden/DNA.md](garden/DNA.md) holds the rules a change must keep (what the project is for, what counts as evidence, how it grows, what it refuses); [AGENTS.md](AGENTS.md) has the code layout and the build.

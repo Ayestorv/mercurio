@@ -45,8 +45,17 @@ class HerdrSwipesTest {
     }
 
     @Test
+    fun claim_takesAFastOneFingerFlickUpOrDown() {
+        assertEquals(Claim.CLAIM, HerdrSwipes.claim(1, 2f, -25f, vy = -1500f))
+        assertEquals(Claim.CLAIM, HerdrSwipes.claim(1, -3f, 30f, vx = -100f, vy = 1000f))
+    }
+
+    @Test
     fun claim_leavesScrollPinchDiagonalsAndThreeFingersToTheTerminal() {
         assertEquals("one finger up or down is scroll", Claim.RELEASE, HerdrSwipes.claim(1, 4f, -30f))
+        assertEquals("a drag up that is not fast is scroll", Claim.RELEASE, HerdrSwipes.claim(1, 0f, -30f, vy = -900f))
+        assertEquals("fast, but the other way it travelled", Claim.RELEASE, HerdrSwipes.claim(1, 0f, -30f, vy = 1500f))
+        assertEquals("a fast diagonal", Claim.RELEASE, HerdrSwipes.claim(1, 20f, -25f, vx = 1500f, vy = -1500f))
         assertEquals("a pinch changes the gap between fingers", Claim.RELEASE, HerdrSwipes.claim(2, 2f, 1f, spanChange = 40f))
         assertEquals("a pinch in", Claim.RELEASE, HerdrSwipes.claim(2, 0f, 0f, spanChange = -25f))
         assertEquals("diagonal", Claim.RELEASE, HerdrSwipes.claim(1, 25f, 20f))
@@ -58,7 +67,23 @@ class HerdrSwipesTest {
     fun classify_oneFingerAcrossMovesBetweenTabs() {
         assertEquals(HerdrSwipe.NEXT_TAB, HerdrSwipes.classify(1, -80f, 5f, 0f, 0f))
         assertEquals(HerdrSwipe.PREV_TAB, HerdrSwipes.classify(1, 80f, -5f, 0f, 0f))
-        assertNull("one finger up or down is never a swipe", HerdrSwipes.classify(1, 0f, -200f, 0f, -3000f))
+    }
+
+    @Test
+    fun classify_aFastOneFingerFlickMovesBetweenWorkspaces() {
+        assertEquals(HerdrSwipe.NEXT_WORKSPACE, HerdrSwipes.classify(1, 0f, -200f, 0f, -3000f))
+        assertEquals(HerdrSwipe.PREV_WORKSPACE, HerdrSwipes.classify(1, 5f, 40f, 0f, 1200f))
+        assertNull("long, but it left slowly", HerdrSwipes.classify(1, 0f, -200f, 0f, -600f))
+        assertNull("fast, but flung back the other way", HerdrSwipes.classify(1, 0f, -80f, 0f, 2000f))
+        assertNull("under the judging distance", HerdrSwipes.classify(1, 0f, -15f, 0f, -3000f))
+    }
+
+    @Test
+    fun classify_keepsTheAxisTheTouchWasClaimedOn() {
+        assertEquals(HerdrSwipe.NEXT_TAB, HerdrSwipes.classify(1, -80f, 5f, -900f, 0f, across = true))
+        assertNull("claimed across, ended as a flick up", HerdrSwipes.classify(1, -10f, -90f, 0f, -3000f, across = true))
+        assertNull("claimed up, ended across", HerdrSwipes.classify(2, -90f, -10f, 0f, 0f, across = false))
+        assertEquals(HerdrSwipe.NEXT_WORKSPACE, HerdrSwipes.classify(2, -8f, -70f, 0f, 0f, across = false))
     }
 
     @Test

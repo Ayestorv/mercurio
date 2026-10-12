@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Cleartext HTTP stays off everywhere (the Android default) except the phone's own
+    loopback: the dev preview loads http://127.0.0.1:<port>, a local port that the SSH
+    connection forwards to the host, so the bytes on the network are inside SSH.
+-->
+<network-security-config>
+	<domain-config cleartextTrafficPermitted="true">
+		<domain includeSubdomains="false">127.0.0.1</domain>
+	</domain-config>
+</network-security-config>

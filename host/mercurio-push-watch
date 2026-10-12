@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Wake Mercurio when a Herdr agent needs you.
 
-Follows one Herdr session's event stream over its API socket. When a pane's
-agent turns blocked (and, with --states blocked,done, done), it POSTs a small
-JSON message to every push endpoint in the endpoints file. The phone's
+Follows the event stream of every running Herdr session over its API socket,
+and looks for new sessions every few seconds (--session NAME follows just that
+one). When a pane's agent turns blocked (and, with --states blocked,done, done),
+it POSTs a small JSON message, naming the session, to every push endpoint in the
+endpoints file. The phone's
 UnifiedPush distributor (the ntfy app) delivers it and wakes Mercurio, which
 then reads the pane over SSH itself. The message never carries pane text.
 
@@ -22,6 +24,7 @@ import os
 import signal
 import socket
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -32,6 +35,8 @@ from urllib.parse import urlsplit
 # names a closed pane), so any of these events means: snapshot and resubscribe.
 STRUCTURE_EVENTS = ("pane.created", "pane.closed")
 MAX_BACKOFF = 60.0
+# How often to look for Herdr sessions that started since the last look.
+RESCAN = 15.0
 
 
 def log(message: str) -> None:
@@ -48,6 +53,32 @@ def herdr_socket(session: str | None) -> str:
     if session and session != "default":
         return os.path.join(base, "sessions", session, "herdr.sock")
     return os.environ.get("HERDR_SOCKET_PATH") or os.path.join(base, "herdr.sock")
+
+
+def herdr_sessions() -> dict[str, str]:
+    """Every Herdr session with a socket, by name: the default one and herdr/sessions/*."""
+    found = {}
+    default = herdr_socket(None)
+    if os.path.exists(default):
+        found["default"] = default
+    sessions = os.path.join(config_home(), "herdr", "sessions")
+    names = sorted(os.listdir(sessions)) if os.path.isdir(sessions) else []
+    for name in names:
+        sock = herdr_socket(name)
+        if os.path.exists(sock):
+            found[name] = sock
+    return found
+
+
+def running(sock_path: str) -> bool:
+    """A stopped session can leave its socket file behind; only a live server accepts."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(2)
+            s.connect(sock_path)
+        return True
+    except OSError:
+        return False
 
 
 def read_endpoints(path: str) -> list[str]:
@@ -218,10 +249,11 @@ class Watcher:
         raise ConnectionError("herdr closed the event stream")
 
     def run(self) -> int:
-        if not os.path.isdir(os.path.dirname(self.sock_path)):
-            log(f"no Herdr here ({os.path.dirname(self.sock_path)} missing); nothing to watch")
-            return 0
         while True:
+            # A deleted session takes its directory with it; a stopped one is retried.
+            if not os.path.isdir(os.path.dirname(self.sock_path)):
+                log(f"no Herdr here ({os.path.dirname(self.sock_path)} missing); nothing to watch")
+                return 0
             try:
                 self.follow()
             except (OSError, ValueError, RuntimeError) as e:
@@ -232,24 +264,52 @@ class Watcher:
                 self.backoff = min(self.backoff * 2, MAX_BACKOFF)
 
 
+class Sessions:
+    """One Watcher thread per running Herdr session; [scan] starts the new ones."""
+
+    def __init__(self, make: Callable[[str, str], Watcher], find: Callable[[], dict[str, str]] = herdr_sessions) -> None:
+        self.make = make
+        self.find = find
+        self.threads: dict[str, threading.Thread] = {}
+
+    def scan(self) -> None:
+        for name, sock in self.find().items():
+            thread = self.threads.get(name)
+            if (thread is not None and thread.is_alive()) or not running(sock):
+                continue
+            log(f"session {name}: following {sock}")
+            thread = threading.Thread(target=self.make(sock, name).run, name=f"watch-{name}", daemon=True)
+            thread.start()
+            self.threads[name] = thread
+
+    def run(self) -> int:
+        herdr = os.path.join(config_home(), "herdr")
+        if not os.path.isdir(herdr):
+            log(f"no Herdr here ({herdr} missing); nothing to watch")
+            return 0
+        while True:
+            self.scan()
+            time.sleep(RESCAN)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Push Herdr agent alerts to Mercurio.")
-    parser.add_argument("--session", help="Herdr session name (default: the default session)")
+    parser.add_argument("--session", help="follow only this Herdr session (default: every running session)")
     parser.add_argument("--states", default="blocked", help="comma list of states to push (default: blocked)")
     parser.add_argument("--debounce", type=float, default=20.0, help="seconds between pushes for one pane")
     parser.add_argument("--endpoints", default=os.path.join(config_home(), "mercurio", "push-endpoints"))
     args = parser.parse_args(argv)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    watcher = Watcher(
-        herdr_socket(args.session),
-        args.session or "default",
-        socket.gethostname(),
-        [s.strip() for s in args.states.split(",") if s.strip()],
-        args.debounce,
-        args.endpoints,
-    )
+    host = socket.gethostname()
+    states = [s.strip() for s in args.states.split(",") if s.strip()]
+
+    def make(sock_path: str, session: str) -> Watcher:
+        return Watcher(sock_path, session, host, states, args.debounce, args.endpoints)
+
     try:
-        return watcher.run()
+        if args.session:
+            return make(herdr_socket(args.session), args.session).run()
+        return Sessions(make).run()
     except KeyboardInterrupt:
         return 0
 

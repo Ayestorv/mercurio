@@ -65,10 +65,11 @@ object HerdApproval {
     /** Whether [paneId] is still an answerable blocked agent in [snapshot]. */
     fun stillBlocked(snapshot: HerdrSessionSnapshot, paneId: String): Boolean = snapshot.agents.any { it.paneId == paneId && offersAnswers(it) }
 
-    /** `herdr pane send-keys <pane> <key>` through a login shell. */
-    fun sendKeysCommand(paneId: String, answer: HerdAnswer): String {
+    /** `herdr pane send-keys <pane> <key>` through a login shell, in [session]. */
+    fun sendKeysCommand(paneId: String, answer: HerdAnswer, session: String = HerdrCommands.DEFAULT_SESSION): String {
         require(PANE_ID.matches(paneId)) { "Unexpected Herdr pane id: $paneId" }
-        return HerdrApi.loginShell("herdr pane send-keys ${HerdrApi.shQuote(paneId)} ${answer.key}")
+        val herdr = if (HerdrSessions.isDefault(session)) "herdr" else "herdr --session ${HerdrSessions.quoted(session)}"
+        return HerdrApi.loginShell("$herdr pane send-keys ${HerdrApi.shQuote(paneId)} ${answer.key}")
     }
 
     /**

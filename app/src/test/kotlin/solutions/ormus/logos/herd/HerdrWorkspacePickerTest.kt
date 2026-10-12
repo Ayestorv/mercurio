@@ -44,6 +44,9 @@ class HerdrWorkspacePickerTest {
 
     private fun ok(name: String) = CommandOutput(stdout = herdrFixture(name), stderr = "", exitCode = 0)
 
+    // The default session's rows only, as before there were other sessions.
+    private fun choices(snapshot: HerdrSessionSnapshot?) = HerdrWorkspacePicker.choices(listOfNotNull(snapshot?.let { "default" to it }).toMap())
+
     // Recorded from `herdr --session <stopped> api snapshot` on Sun: exit 1, error JSON on stderr.
     private val serverNotRunning = CommandOutput(
         stdout = "",
@@ -64,14 +67,14 @@ class HerdrWorkspacePickerTest {
 
     @Test
     fun choices_noneWithoutASnapshotOrWithOneWorkspace() {
-        assertNull(HerdrWorkspacePicker.choices(null))
+        assertNull(choices(null))
         val one = snapshot("snapshot-picker-test.json").let { it.copy(workspaces = it.workspaces.take(1)) }
-        assertNull(HerdrWorkspacePicker.choices(one))
+        assertNull(choices(one))
     }
 
     @Test
     fun choices_realSessionWithThreeWorkspaces() {
-        val choices = checkNotNull(HerdrWorkspacePicker.choices(snapshot("snapshot-picker-test.json")))
+        val choices = checkNotNull(choices(snapshot("snapshot-picker-test.json")))
         assertEquals(listOf("tmp", "beta", "gamma"), choices.map { it.label })
         assertEquals(listOf(1, 2, 3), choices.map { it.number })
         assertEquals(listOf("w1"), choices.filter { it.focused }.map { it.workspaceId })
@@ -81,7 +84,7 @@ class HerdrWorkspacePickerTest {
     @Test
     fun choices_rollUpTheMostUrgentAgentPerWorkspace() {
         // w1 holds blocked, done, working and idle agents; the other three hold none.
-        val choices = checkNotNull(HerdrWorkspacePicker.choices(snapshot("snapshot-sun-mixed.json")))
+        val choices = checkNotNull(choices(snapshot("snapshot-sun-mixed.json")))
         assertEquals(4, choices.size)
         assertEquals(HerdrAgentStatus.BLOCKED, choices.single { it.workspaceId == "w1" }.state)
         assertTrue(choices.filter { it.workspaceId != "w1" }.all { it.state == HerdrAgentStatus.UNKNOWN })
@@ -92,7 +95,7 @@ class HerdrWorkspacePickerTest {
     fun choices_fallBackOnTheWorkspaceStatusWhenNoAgentSays() {
         val base = snapshot("snapshot-picker-test.json")
         val marked = base.copy(workspaces = base.workspaces.map { if (it.workspaceId == "w2") it.copy(agentStatus = HerdrAgentStatus.DONE) else it })
-        assertEquals(HerdrAgentStatus.DONE, checkNotNull(HerdrWorkspacePicker.choices(marked)).single { it.workspaceId == "w2" }.state)
+        assertEquals(HerdrAgentStatus.DONE, checkNotNull(choices(marked)).single { it.workspaceId == "w2" }.state)
     }
 
     @Test
@@ -137,7 +140,7 @@ class HerdrWorkspacePickerTest {
         val flow = Flow { serverNotRunning }
         assertNull(flow.offer())
         assertNull(flow.asked)
-        assertEquals(listOf(Herd.snapshotCommand), flow.commands)
+        assertEquals(setOf(Herd.snapshotCommand, HerdrSessions.listCommand), flow.commands.toSet())
     }
 
     @Test
@@ -179,16 +182,16 @@ class HerdrWorkspacePickerTest {
         }
         assertEquals(WorkspacePick.Focus("w3"), flow.offer())
         assertEquals(3, flow.asked?.size)
-        assertEquals(2, flow.commands.size)
-        assertTrue(flow.commands[1], flow.commands[1].contains("herdr workspace focus"))
-        assertTrue(flow.commands[1], flow.commands[1].contains("w3"))
+        assertEquals(3, flow.commands.size)
+        assertTrue(flow.commands.last(), flow.commands.last().contains("herdr workspace focus"))
+        assertTrue(flow.commands.last(), flow.commands.last().contains("w3"))
     }
 
     @Test
     fun offer_attachRunsNothingMore() {
         val flow = Flow(WorkspacePick.Attach) { ok("snapshot-picker-test.json") }
         assertEquals(WorkspacePick.Attach, flow.offer())
-        assertEquals(listOf(Herd.snapshotCommand), flow.commands)
+        assertEquals(setOf(Herd.snapshotCommand, HerdrSessions.listCommand), flow.commands.toSet())
     }
 
     @Test
@@ -197,5 +200,54 @@ class HerdrWorkspacePickerTest {
             if (command == Herd.snapshotCommand) ok("snapshot-picker-test.json") else throw IllegalStateException("dropped")
         }
         assertEquals(WorkspacePick.Focus("w2"), flow.offer())
+    }
+
+    // A host running the default session (four workspaces) and "work" (three).
+    private fun twoSessions(command: String): CommandOutput = when (command) {
+        Herd.snapshotCommand -> ok("snapshot-sun-mixed.json")
+        HerdrSessions.listCommand -> ok("session-list.json")
+        HerdrSessions.snapshotCommand("work") -> ok("snapshot-picker-test.json")
+        else -> CommandOutput("", "", 0)
+    }
+
+    @Test
+    fun choices_everySessionDefaultFirst_onlyTheDefaultFocusMarked() {
+        val choices = checkNotNull(
+            HerdrWorkspacePicker.choices(mapOf("work" to snapshot("snapshot-picker-test.json"), "default" to snapshot("snapshot-sun-mixed.json"))),
+        )
+        assertEquals(listOf("default", "default", "default", "default", "work", "work", "work"), choices.map { it.session })
+        assertEquals(listOf("default" to "w1"), choices.filter { it.focused }.map { it.session to it.workspaceId })
+        // One workspace in each of two sessions is still a choice to make.
+        val one = snapshot("snapshot-picker-test.json").let { it.copy(workspaces = it.workspaces.take(1)) }
+        assertEquals(2, HerdrWorkspacePicker.choices(mapOf("default" to one, "work" to one))?.size)
+    }
+
+    @Test
+    fun offer_listsTheWorkspacesOfEveryRunningSession() {
+        val flow = Flow(WorkspacePick.Attach, ::twoSessions)
+        assertEquals(WorkspacePick.Attach, flow.offer())
+        assertEquals(7, flow.asked?.size)
+        // The stopped session in the list is never asked for its snapshot.
+        assertTrue(flow.commands.none { "old" in it })
+    }
+
+    @Test
+    fun offer_aRowInAnotherSessionFocusesItThere() {
+        val flow = Flow(WorkspacePick.Focus("w2", "work"), ::twoSessions)
+        assertEquals(WorkspacePick.Focus("w2", "work"), flow.offer())
+        assertEquals(HerdrSessions.commands("work").build(HerdrAction.FocusWorkspace("w2"), null), HerdrInvocation.Cli(flow.commands.last()))
+        assertTrue(flow.commands.last(), flow.commands.last().contains("herdr --session '\\''work'\\'' workspace focus"))
+    }
+
+    @Test
+    fun postLogin_attachesThePickedSession() {
+        val work = WorkspacePick.Focus("w2", "work")
+        assertEquals("herdr session attach 'work'\n", HerdrWorkspacePicker.postLogin("herdr\n", work))
+        assertEquals("exec herdr session attach 'work'", HerdrWorkspacePicker.postLogin("exec herdr", work))
+        assertEquals("~/.local/bin/herdr session attach 'work'", HerdrWorkspacePicker.postLogin("~/.local/bin/herdr", work))
+        // The default session, the gold key and Back keep the post-login as it is.
+        assertEquals("herdr\n", HerdrWorkspacePicker.postLogin("herdr\n", WorkspacePick.Focus("w2")))
+        assertEquals("herdr\n", HerdrWorkspacePicker.postLogin("herdr\n", WorkspacePick.Attach))
+        assertEquals("herdr\n", HerdrWorkspacePicker.postLogin("herdr\n", null))
     }
 }

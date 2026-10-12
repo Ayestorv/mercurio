@@ -45,9 +45,10 @@ import solutions.ormus.logos.herd.WorkspaceChoice
 import solutions.ormus.logos.herd.WorkspacePick
 
 /**
- * The connect-time Herdr picker: one row per workspace (a gold dot on the focused
- * one, its most urgent agent state on the right), the gold key to attach where
- * Herdr already is. A row focuses its workspace first. Back attaches as before.
+ * The connect-time Herdr picker: one row per workspace of every running Herdr
+ * session (a gold dot on the default session's focused one, its most urgent agent
+ * state on the right), the gold key to attach where Herdr already is. A row focuses
+ * its workspace first, and attaches its session. Back attaches as before.
  */
 @Composable
 internal fun HerdrWorkspacePromptContent(
@@ -73,7 +74,12 @@ internal fun HerdrWorkspacePromptContent(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            choices.forEach { choice -> WorkspaceRow(choice) { onPick(WorkspacePick.Focus(choice.workspaceId)) } }
+            // With more than one Herdr session, each session's rows sit under its name.
+            val grouped = choices.distinctBy { it.session }.size > 1
+            choices.forEachIndexed { index, choice ->
+                if (grouped && choices.getOrNull(index - 1)?.session != choice.session) MonoLabel(choice.session)
+                WorkspaceRow(choice) { onPick(WorkspacePick.Focus(choice.workspaceId, choice.session)) }
+            }
         }
         OrmusKey(
             label = focused?.let { stringResource(R.string.herdr_picker_attach_to, it.label) }

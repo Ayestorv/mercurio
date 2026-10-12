@@ -15,9 +15,11 @@ management come from ConnectBot. Mercurio is maintained by
 ### Terminal and input
 
 - **Compose bar.** Two rows of keys under the terminal: paging ↑ and ↓, Herdr,
-  the tab switchers ← and →, Esc, Tab, a text field for the keyboard or the
-  phone's voice input, and one ⏎ key that sends the field's text and then
-  Enter, or Enter alone when the field is empty.
+  Needs you, Esc, Tab, a text field for the keyboard or the phone's voice
+  input, and one ⏎ key that sends the field's text and then Enter, or Enter
+  alone when the field is empty. Needs you shows how many agents wait for you
+  in every Herdr session, in gold while any does; a tap jumps to the next one,
+  cycling, and a long press (or a tap with none waiting) opens the Agents board.
 - **Tray.** ⋯ or a swipe up on the bar opens more keys: arrows, jump to the
   latest output, Mode, clear the typed line, the read view, copy the latest
   URL, copy the agent's last reply, paste a screenshot, Herdr's sidebar and the
@@ -48,8 +50,12 @@ management come from ConnectBot. Mercurio is maintained by
 - **Keys from the host's config.** The prefix and every client key come from
   the host's Herdr config, with Herdr's defaults for anything it leaves out.
 - **Gestures.** On the terminal of a Herdr session, one finger across switches
-  tabs, two fingers across move pane focus, and two fingers up or down step
-  through workspaces. One finger up or down still scrolls; a pinch still zooms.
+  tabs, two fingers across move pane focus, and two fingers up or down, or a
+  fast one-finger flick up or down, step through workspaces. When the host's
+  Herdr client has saved machines, that step goes through Herdr's own switcher
+  (prefix+w, an arrow, Enter), so it reaches workspaces on the other machines
+  too. A one-finger drag up or down that is not a flick still scrolls; a pinch
+  still zooms.
 - **Herd screen.** Every agent in the session by state (blocked, done, working,
   idle). Tap one to focus its pane.
 - **Reattach.** When the Herdr client drops with `lost connection to server`,

@@ -124,7 +124,9 @@ systemctl --user daemon-reload && systemctl --user enable --now mercurio-push-wa
 journalctl --user -u mercurio-push-watch -f    # "watching N panes on .../herdr.sock"
 ```
 
-It follows the default Herdr session. For a named session, add `--session <name>` to `ExecStart`.
+It follows every running Herdr session (the default one and each under `~/.config/herdr/sessions/`)
+and looks for new ones every 15 s; each alert names its session, and Mercurio answers Approve and
+Deny in that session. To follow one session only, add `--session <name>` to `ExecStart`.
 It resubscribes when panes open or close, reconnects with backoff (up to 60 s) when the Herdr
 server restarts, and pushes one alert per pane per 20 s at most (`--debounce`). It stays quiet
 about panes that were already blocked when it started. With no Herdr config directory on the host

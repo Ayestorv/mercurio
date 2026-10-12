@@ -24,5 +24,8 @@ object LatestUrl {
     private val URL = Regex("""https?://[^\s<>"'`()\[\]{}]+""")
 
     /** The last http(s) URL in [text], without trailing sentence punctuation; null if none. */
-    fun find(text: String): String? = URL.findAll(text).lastOrNull()?.value?.trimEnd('.', ',', ';', ':', '!', '?')
+    fun find(text: String): String? = findAll(text).lastOrNull()
+
+    /** Every http(s) URL in [text], oldest first, each without trailing sentence punctuation. */
+    fun findAll(text: String): List<String> = URL.findAll(text).map { it.value.trimEnd('.', ',', ';', ':', '!', '?') }.toList()
 }

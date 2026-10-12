@@ -91,6 +91,27 @@ object UsageActions {
     const val READER_TEXT_SMALLER = "reader:text-smaller"
     const val READER_TEXT_LARGER = "reader:text-larger"
 
+    // Agent chat: opened from the Herdr panel's Chat key or the Read key on an agent pane
+    // (that key also logs reader:open), then closed, read again, a reply sent, Approve or
+    // Deny, a tool row opened, the raw terminal output asked for. Never the reply's text.
+    const val CHAT_OPEN = "chat:open"
+    const val CHAT_CLOSE = "chat:close"
+    const val CHAT_REFRESH = "chat:refresh"
+    const val CHAT_SEND = "chat:send"
+    const val CHAT_APPROVE = "chat:approve"
+    const val CHAT_DENY = "chat:deny"
+    const val CHAT_TOOL = "chat:tool"
+    const val CHAT_TERMINAL = "chat:terminal"
+
+    // Diff viewer: opened from the console menu or the Herdr panel's Diff key.
+    const val DIFF_OPEN = "diff:open"
+    const val HERDR_SHEET_DIFF = "herdr-sheet:diff"
+    const val DIFF_FILE = "diff:file"
+    const val DIFF_BACK = "diff:back"
+    const val DIFF_DIR = "diff:dir"
+    const val DIFF_REFRESH = "diff:refresh"
+    const val DIFF_CLOSE = "diff:close"
+
     // Session drawer and the machines list inside it.
     const val DRAWER_OPEN = "drawer:open"
     const val DRAWER_SWITCH = "drawer:switch"
@@ -121,6 +142,15 @@ object UsageActions {
     const val OVERLAY_COPY_DETAILS = "overlay:copy-details"
     const val OVERLAY_SEND_ERROR = "overlay:send-error"
 
+    // Dev preview: opened from the console menu; a server picked, the page reloaded, back
+    // (in the page, then to the list), the list read again, closed.
+    const val PREVIEW_OPEN = "preview:open"
+    const val PREVIEW_PICK = "preview:pick"
+    const val PREVIEW_RELOAD = "preview:reload"
+    const val PREVIEW_BACK = "preview:back"
+    const val PREVIEW_REFRESH = "preview:refresh"
+    const val PREVIEW_CLOSE = "preview:close"
+
     // Host list.
     const val HOSTLIST_CONNECT = "hostlist:connect"
     const val HOSTLIST_ADD = "hostlist:add"
@@ -147,6 +177,19 @@ object UsageActions {
     const val HERD_REFRESH = "herd:refresh"
     const val HERD_COMMANDS = "herd:commands"
     const val HERD_CLOSE = "herd:close"
+
+    // File browser: opened from the console menu.
+    const val FILES_OPEN = "files:open"
+    const val FILES_DIR = "files:dir"
+    const val FILES_REV = "files:rev"
+    const val FILES_FOLDER = "files:folder"
+    const val FILES_UP = "files:up"
+    const val FILES_FILE = "files:file"
+    const val FILES_COPY_PATH = "files:copy-path"
+    const val FILES_COPY_TEXT = "files:copy-text"
+    const val FILES_REFRESH = "files:refresh"
+    const val FILES_BACK = "files:back"
+    const val FILES_CLOSE = "files:close"
 
     // Herdr command sheet: opened from the Herdr key, then one id per action that ran.
     const val HERDR_SHEET_OPEN = "herdr:sheet-open"
@@ -189,6 +232,32 @@ object UsageActions {
 
     // A numbered key in the tab row at the top of the Herdr panel.
     const val HERDR_SHEET_TAB_KEY = "herdr-sheet:tab-key"
+
+    // A key in the session row at the top of the Herdr panel (the host runs more than one session).
+    const val HERDR_SHEET_SESSION = "herdr-sheet:session"
+
+    // Jump to: opened from the Herdr panel's Tabs group; a tab picked.
+    const val HERDR_JUMP_OPEN = "herdr-jump:open"
+    const val HERDR_JUMP_PICK = "herdr-jump:pick"
+
+    // The compose bar's Needs you key: a tap jumps to the next agent waiting for the user;
+    // with none waiting, or on a long press, it opens the Agents board.
+    const val NEEDS_YOU_JUMP = "needs-you:jump"
+    const val NEEDS_YOU_BOARD = "needs-you:board"
+
+    // Agents board: opened from the Herdr panel; a card tapped (chat, or jump for an agent
+    // without one), long-pressed (jump), opened to its screen, answered; refreshed, closed.
+    const val BOARD_OPEN = "board:open"
+    const val BOARD_CHAT = "board:chat"
+    const val BOARD_JUMP = "board:jump"
+    const val BOARD_MORE = "board:more"
+    const val BOARD_APPROVE = "board:approve"
+    const val BOARD_DENY = "board:deny"
+    const val BOARD_REFRESH = "board:refresh"
+    const val BOARD_CLOSE = "board:close"
+
+    // The one-time "swipe for tabs" hint over a Herdr terminal, put away with its key.
+    const val HERDR_SWIPE_INTRO_DISMISS = "herdr-swipe-intro:dismiss"
     const val HERDR_SHEET_STOP_SESSION = "herdr-sheet:stop-session"
 
     // Herdr panel layout: a long press opened a key's menu; a key hidden, edited (built-in
@@ -227,13 +296,24 @@ object UsageActions {
     const val SLASH_REFRESH = "slash:refresh"
 
     // Swipes on the terminal of a Herdr session: one finger across for tabs, two fingers
-    // across for pane focus, two fingers up or down for workspaces.
+    // across for pane focus, two fingers up or down for workspaces, and a fast one-finger
+    // flick up or down for workspaces too (its own ids, to tell it from two fingers). The
+    // _SWITCHER ids: a workspace swipe sent as Herdr's switcher keys (the client has saved machines).
     const val SWIPE_PREV_TAB = "swipe:prev-tab"
     const val SWIPE_NEXT_TAB = "swipe:next-tab"
     const val SWIPE_PANE_LEFT = "swipe:pane-left"
     const val SWIPE_PANE_RIGHT = "swipe:pane-right"
     const val SWIPE_PREV_WORKSPACE = "swipe:prev-workspace"
     const val SWIPE_NEXT_WORKSPACE = "swipe:next-workspace"
+    const val SWIPE_FLICK_PREV_WORKSPACE = "swipe:flick-prev-workspace"
+    const val SWIPE_FLICK_NEXT_WORKSPACE = "swipe:flick-next-workspace"
+    const val SWIPE_PREV_WORKSPACE_SWITCHER = "swipe:prev-workspace-switcher"
+    const val SWIPE_NEXT_WORKSPACE_SWITCHER = "swipe:next-workspace-switcher"
+    const val SWIPE_FLICK_PREV_WORKSPACE_SWITCHER = "swipe:flick-prev-workspace-switcher"
+    const val SWIPE_FLICK_NEXT_WORKSPACE_SWITCHER = "swipe:flick-next-workspace-switcher"
+
+    // A tap on the terminal sent as a mouse click, to a program that asked for the mouse.
+    const val TERMINAL_MOUSE_CLICK = "terminal:mouse-click"
 
     // Sessions. Recorded by the terminal service, not by a control.
     const val SESSION_START = "session:start"
@@ -255,6 +335,10 @@ object UsageActions {
     const val PUSH_RECEIVED = "push:received"
     const val PUSH_IGNORED = "push:ignored"
 
+    // Login: a password typed at the connect prompt was stored after the server accepted
+    // it ("Remember password" ticked). Recorded by the SSH transport; never the password.
+    const val AUTH_PASSWORD_SAVED = "auth:password-saved"
+
     val ALL: List<String> = listOf(
         KEY_MODE, KEY_ESC, KEY_STOP, KEY_CTRL, KEY_CTRL_CHAR, KEY_Y, KEY_N,
         KEY_TAB, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_BOTTOM, KEY_CLEAR_LINE, KEY_ENTER, KEY_OTHER,
@@ -264,18 +348,23 @@ object UsageActions {
         HERDR_PGUP, HERDR_PGDN, HERDR_DONE,
         READER_OPEN, READER_CLOSE, READER_REFRESH, READER_TOP, READER_PGUP, READER_PGDN,
         READER_BOTTOM, READER_TEXT_SMALLER, READER_TEXT_LARGER,
+        CHAT_OPEN, CHAT_CLOSE, CHAT_REFRESH, CHAT_SEND, CHAT_APPROVE, CHAT_DENY, CHAT_TOOL, CHAT_TERMINAL,
+        DIFF_OPEN, HERDR_SHEET_DIFF, DIFF_FILE, DIFF_BACK, DIFF_DIR, DIFF_REFRESH, DIFF_CLOSE,
         DRAWER_OPEN, DRAWER_SWITCH, DRAWER_DISCONNECT, DRAWER_QUICK_CONNECT, DRAWER_HOST_LIST,
         MACHINES_CONNECT, MACHINES_REFRESH, MACHINES_FIX_PROMPT,
         CONSOLE_BACK, CONSOLE_TEXT_INPUT, CONSOLE_PASTE, CONSOLE_MENU,
         MENU_RECONNECT, MENU_DISCONNECT, MENU_URL_SCAN, MENU_RESIZE, MENU_PORT_FORWARDS,
         MENU_FULLSCREEN, MENU_TITLE_BAR, MENU_WISH, MENU_COPY_DETAILS, MENU_SEND_ERROR,
         OVERLAY_RECONNECT, OVERLAY_CLOSE, OVERLAY_COPY_DETAILS, OVERLAY_SEND_ERROR,
+        PREVIEW_OPEN, PREVIEW_PICK, PREVIEW_RELOAD, PREVIEW_BACK, PREVIEW_REFRESH, PREVIEW_CLOSE,
         HOSTLIST_CONNECT, HOSTLIST_ADD, HOSTLIST_SETTINGS, HOSTLIST_WISH, HOSTLIST_COPY_DETAILS, HOSTLIST_SEND_ERROR,
         WISH_SAVE, WISH_EDIT, WISH_DONE, WISH_DELETE,
         SETTINGS_USAGE_SUMMARY, SETTINGS_USAGE_CLEAR, SETTINGS_UPLOAD_NOW, SETTINGS_WISHES,
         SESSION_START, SESSION_END, SESSION_FAIL, SESSION_RECONNECT,
         UPLOAD_REFUSED_HOSTKEY,
         HERD_OPEN, HERD_CARD, HERD_REFRESH, HERD_COMMANDS, HERD_CLOSE,
+        FILES_OPEN, FILES_DIR, FILES_REV, FILES_FOLDER, FILES_UP, FILES_FILE, FILES_COPY_PATH, FILES_COPY_TEXT,
+        FILES_REFRESH, FILES_BACK, FILES_CLOSE,
         HERDR_SHEET_OPEN, HERDR_SHEET_NEXT_BLOCKED, HERDR_SHEET_START_CLAUDE, HERDR_SHEET_START_CODEX,
         HERDR_SHEET_START_GROK, HERDR_SHEET_EXPLAIN, HERDR_SHEET_SPLIT_RIGHT, HERDR_SHEET_SPLIT_DOWN,
         HERDR_SHEET_ZOOM, HERDR_SHEET_FOCUS_LEFT, HERDR_SHEET_FOCUS_RIGHT, HERDR_SHEET_FOCUS_UP,
@@ -286,7 +375,9 @@ object UsageActions {
         HERDR_SHEET_COPY_MODE, HERDR_SHEET_GOTO, HERDR_SHEET_OPEN_NOTIFICATION, HERDR_SHEET_DETACH,
         HERDR_SHEET_RELOAD_CONFIG, HERDR_SHEET_HELP, HERDR_SHEET_STOP_SESSION,
         HERDR_SHEET_SIDEBAR, HERDR_SHEET_NAVIGATE_WORKSPACES, HERDR_SHEET_FIX_PROMPT, HERDR_SHEET_RETRY,
-        HERDR_SHEET_TAB_KEY,
+        HERDR_SHEET_TAB_KEY, HERDR_SHEET_SESSION,
+        HERDR_JUMP_OPEN, HERDR_JUMP_PICK, NEEDS_YOU_JUMP, NEEDS_YOU_BOARD, HERDR_SWIPE_INTRO_DISMISS,
+        BOARD_OPEN, BOARD_CHAT, BOARD_JUMP, BOARD_MORE, BOARD_APPROVE, BOARD_DENY, BOARD_REFRESH, BOARD_CLOSE,
         HERDR_SHEET_KEY_MENU, HERDR_SHEET_KEY_HIDE, HERDR_SHEET_KEY_EDIT, HERDR_SHEET_KEY_ADD,
         HERDR_SHEET_KEY_REMOVE, HERDR_SHEET_RESTORE,
         HERDR_PICKER_SHOW, HERDR_PICKER_PICK, HERDR_PICKER_ATTACH, HERDR_PICKER_DISMISS,
@@ -294,7 +385,11 @@ object UsageActions {
         PALETTE_OPEN, PALETTE_RUN,
         SLASH_SEND, SLASH_INSERT, SLASH_AGENT, SLASH_REFRESH,
         SWIPE_PREV_TAB, SWIPE_NEXT_TAB, SWIPE_PANE_LEFT, SWIPE_PANE_RIGHT, SWIPE_PREV_WORKSPACE, SWIPE_NEXT_WORKSPACE,
+        SWIPE_FLICK_PREV_WORKSPACE, SWIPE_FLICK_NEXT_WORKSPACE, SWIPE_PREV_WORKSPACE_SWITCHER, SWIPE_NEXT_WORKSPACE_SWITCHER,
+        SWIPE_FLICK_PREV_WORKSPACE_SWITCHER, SWIPE_FLICK_NEXT_WORKSPACE_SWITCHER,
+        TERMINAL_MOUSE_CLICK,
         PUSH_REGISTERED, PUSH_FAILED, PUSH_UNREGISTERED, PUSH_HOST_SYNCED, PUSH_RECEIVED, PUSH_IGNORED,
+        AUTH_PASSWORD_SAVED,
     )
 
     private val known: Set<String> = ALL.toSet()

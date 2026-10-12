@@ -1,6 +1,6 @@
 /*
  * ConnectBot: simple, powerful, open-source SSH client for Android
- * Copyright 2025 Kenny Root
+ * Copyright 2025-2026 Kenny Root
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.runBlocking
 import org.connectbot.ui.MainActivity
 import org.connectbot.util.TestUriBuilder
-import org.connectbot.util.waitForBridgeByNickname
+import org.connectbot.util.waitForBridge
 import org.connectbot.util.waitUntilServiceBound
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -81,8 +81,9 @@ class MainActivityTest {
     }
 
     @Test
-    fun shortcut_localUri_launchesCorrectly() {
-        val uri = TestUriBuilder.local("LocalShortcut")
+    fun shortcut_sshUri_launchesCorrectly() {
+        // A TEST-NET address (RFC 5737) never answers, so the bridge stays open while we look.
+        val uri = TestUriBuilder.ssh(hostname = "192.0.2.1")
         val shortcutIntent = Intent(Intent.ACTION_VIEW, uri).apply {
             setClass(context, MainActivity::class.java)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -96,7 +97,7 @@ class MainActivityTest {
                 }
                 val manager = state.terminalManager
                 val bridge = runBlocking {
-                    manager.waitForBridgeByNickname("LocalShortcut")
+                    manager.waitForBridge({ it.host.hostname == "192.0.2.1" })
                 }
 
                 assertNotNull("Shortcut should create connection", bridge)

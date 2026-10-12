@@ -62,6 +62,10 @@ class HerdApprovalTest {
         assertEquals("bash -lc 'herdr pane send-keys '\\''w1:p1'\\'' enter'", HerdApproval.sendKeysCommand("w1:p1", HerdAnswer.APPROVE))
         assertEquals("bash -lc 'herdr pane send-keys '\\''w1:p1'\\'' esc'", HerdApproval.sendKeysCommand("w1:p1", HerdAnswer.DENY))
         assertTrue(runCatching { HerdApproval.sendKeysCommand("w1:p1; rm -rf ~", HerdAnswer.APPROVE) }.isFailure)
+        assertEquals(
+            "bash -lc 'herdr --session '\\''work'\\'' pane send-keys '\\''w1:p1'\\'' enter'",
+            HerdApproval.sendKeysCommand("w1:p1", HerdAnswer.APPROVE, "work"),
+        )
     }
 
     @Test
@@ -132,6 +136,14 @@ class HerdApprovalTest {
         assertEquals(HerdAnswerOutcome.Sent, session(host).answer("w1:p1", HerdAnswer.APPROVE))
         assertEquals(1, host.ran.count { "api snapshot" in it })
         assertEquals(HerdApproval.sendKeysCommand("w1:p1", HerdAnswer.APPROVE), host.ran.last())
+    }
+
+    @Test
+    fun answer_inAnotherSession_checksAndSendsThere() = runTest {
+        val host = Host(blockedClaude)
+
+        assertEquals(HerdAnswerOutcome.Sent, session(host).answer("w1:p1", HerdAnswer.APPROVE, "work"))
+        assertEquals(listOf(HerdrSessions.snapshotCommand("work"), HerdApproval.sendKeysCommand("w1:p1", HerdAnswer.APPROVE, "work")), host.ran)
     }
 
     @Test

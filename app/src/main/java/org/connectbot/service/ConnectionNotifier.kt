@@ -39,6 +39,7 @@ import solutions.ormus.logos.herd.HerdAnswerOutcome
 import solutions.ormus.logos.herd.HerdApproval
 import solutions.ormus.logos.herd.HerdAttention
 import solutions.ormus.logos.herd.HerdrAgentInfo
+import solutions.ormus.logos.herd.HerdrSessions
 import solutions.ormus.logos.herd.title
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -138,9 +139,9 @@ class ConnectionNotifier @Inject constructor() {
     }
 
     /**
-     * A Herdr agent needs the user or finished. Keyed to the pane, so one agent's
-     * notices replace each other; tapping opens that host's console focused on
-     * the agent ([MainActivity.EXTRA_HERD_PANE]).
+     * A Herdr agent needs the user or finished. Keyed to the pane in its Herdr session,
+     * so one agent's notices replace each other; tapping opens that host's console
+     * focused on the agent ([MainActivity.EXTRA_HERD_PANE]).
      *
      * A "Needs you" shows the end of the pane when expanded, and, for agent kinds
      * where it was proven ([HerdApproval]), Approve (Enter) and Deny (Esc). Both
@@ -148,7 +149,7 @@ class ConnectionNotifier @Inject constructor() {
      */
     fun showHerdNotification(context: Context, host: Host, notice: HerdAttention.Notice) {
         val agent = notice.agent
-        val tag = herdTag(host.id, agent.paneId)
+        val tag = herdTag(host.id, notice.session, agent.paneId)
         val needsYou = notice is HerdAttention.Notice.NeedsYou
         val res = context.resources
         val name = agentName(context, agent.agent)
@@ -166,7 +167,7 @@ class ConnectionNotifier @Inject constructor() {
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(listOfNotNull(text.ifEmpty { null }, tail).joinToString("\n\n")))
-            .setContentIntent(openPaneIntent(context, host, agent.paneId, usageId, "$tag:$needsYou"))
+            .setContentIntent(openPaneIntent(context, host, notice.session, agent.paneId, usageId, "$tag:$needsYou"))
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(if (needsYou) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
             // The default, kept on purpose: a lock screen that hides sensitive content hides the pane too.
@@ -174,8 +175,8 @@ class ConnectionNotifier @Inject constructor() {
             .setAutoCancel(true)
 
         if (needsYou && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && HerdApproval.offersAnswers(agent)) {
-            builder.addAction(answerAction(context, host, agent, HerdAnswer.APPROVE, R.string.notification_herd_approve))
-            builder.addAction(answerAction(context, host, agent, HerdAnswer.DENY, R.string.notification_herd_deny))
+            builder.addAction(answerAction(context, host, notice.session, agent, HerdAnswer.APPROVE, R.string.notification_herd_approve))
+            builder.addAction(answerAction(context, host, notice.session, agent, HerdAnswer.DENY, R.string.notification_herd_deny))
         }
 
         val manager = getNotificationManager(context)
@@ -185,11 +186,11 @@ class ConnectionNotifier @Inject constructor() {
     }
 
     /**
-     * What came of Approve or Deny on [paneId]: sent clears the "Needs you"; otherwise it
-     * is replaced, without actions, by why nothing (or nothing known) reached the pane.
+     * What came of Approve or Deny on [session]'s [paneId]: sent clears the "Needs you";
+     * otherwise it is replaced, without actions, by why nothing (or nothing known) reached the pane.
      */
-    fun showHerdAnswer(context: Service, host: Host, paneId: String, agentKind: String?, outcome: HerdAnswerOutcome) {
-        val tag = herdTag(host.id, paneId)
+    fun showHerdAnswer(context: Service, host: Host, session: String, paneId: String, agentKind: String?, outcome: HerdAnswerOutcome) {
+        val tag = herdTag(host.id, session, paneId)
         val manager = getNotificationManager(context)
         val res = context.resources
         val name = agentName(context, agentKind)
@@ -210,7 +211,7 @@ class ConnectionNotifier @Inject constructor() {
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setContentIntent(openPaneIntent(context, host, paneId, UsageActions.NOTIFY_NEEDS_YOU_OPEN, "$tag:answer"))
+            .setContentIntent(openPaneIntent(context, host, session, paneId, UsageActions.NOTIFY_NEEDS_YOU_OPEN, "$tag:answer"))
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setSilent(true)
@@ -220,35 +221,38 @@ class ConnectionNotifier @Inject constructor() {
 
     /** Whether [notice]'s kind of notification is already showing for its pane on [hostId]. */
     fun isHerdNoticeShowing(context: Context, hostId: Long, notice: HerdAttention.Notice): Boolean {
-        val tag = herdTag(hostId, notice.agent.paneId)
+        val tag = herdTag(hostId, notice.session, notice.agent.paneId)
         val id = if (notice is HerdAttention.Notice.NeedsYou) HERD_NEEDS_YOU_NOTIFICATION else HERD_FINISHED_NOTIFICATION
         return getNotificationManager(context).activeNotifications.any { it.tag == tag && it.id == id }
     }
 
-    private fun herdTag(hostId: Long, paneId: String) = "herd:$hostId:$paneId"
+    // Pane ids repeat across Herdr sessions; the default session keeps its old tags.
+    private fun herdTag(hostId: Long, session: String, paneId: String) = if (HerdrSessions.isDefault(session)) "herd:$hostId:$paneId" else "herd:$hostId:$session/$paneId"
 
     private fun agentName(context: Context, kind: String?) = kind?.ifBlank { null } ?: context.getString(R.string.herd_agent_unnamed)
 
-    private fun openPaneIntent(context: Context, host: Host, paneId: String, usageId: String, key: String): PendingIntent {
+    private fun openPaneIntent(context: Context, host: Host, session: String, paneId: String, usageId: String, key: String): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
             data = host.getUri()
             putExtra(MainActivity.EXTRA_HERD_PANE, paneId)
+            putExtra(MainActivity.EXTRA_HERD_SESSION, session)
             putExtra(MainActivity.EXTRA_HERD_NOTICE, usageId)
         }
         return PendingIntent.getActivity(context, key.hashCode(), intent, pendingIntentFlags)
     }
 
     @RequiresApi(Build.VERSION_CODES.S)
-    private fun answerAction(context: Context, host: Host, agent: HerdrAgentInfo, answer: HerdAnswer, label: Int): NotificationCompat.Action {
+    private fun answerAction(context: Context, host: Host, session: String, agent: HerdrAgentInfo, answer: HerdAnswer, label: Int): NotificationCompat.Action {
         val intent = Intent(context, TerminalManager::class.java).apply {
             action = ACTION_HERD_ANSWER
             putExtra(EXTRA_HERD_HOST, host.id)
+            putExtra(EXTRA_HERD_SESSION, session)
             putExtra(EXTRA_HERD_PANE, agent.paneId)
             putExtra(EXTRA_HERD_AGENT, agent.agent)
             putExtra(EXTRA_HERD_ANSWER, answer.name)
         }
-        val code = "${herdTag(host.id, agent.paneId)}:${answer.name}".hashCode()
+        val code = "${herdTag(host.id, session, agent.paneId)}:${answer.name}".hashCode()
         val pending = PendingIntent.getService(context, code, intent, pendingIntentFlags)
         return NotificationCompat.Action.Builder(null, context.getString(label), pending)
             .setAuthenticationRequired(true)
@@ -336,6 +340,7 @@ class ConnectionNotifier @Inject constructor() {
         // Approve and Deny on a "Needs you", handled by TerminalManager.onStartCommand.
         const val ACTION_HERD_ANSWER = "solutions.ormus.logos.action.HERD_ANSWER"
         const val EXTRA_HERD_HOST = "solutions.ormus.logos.extra.HERD_HOST"
+        const val EXTRA_HERD_SESSION = "solutions.ormus.logos.extra.HERD_ANSWER_SESSION"
         const val EXTRA_HERD_PANE = "solutions.ormus.logos.extra.HERD_ANSWER_PANE"
         const val EXTRA_HERD_AGENT = "solutions.ormus.logos.extra.HERD_AGENT"
         const val EXTRA_HERD_ANSWER = "solutions.ormus.logos.extra.HERD_ANSWER"

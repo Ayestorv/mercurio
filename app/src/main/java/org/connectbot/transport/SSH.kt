@@ -52,16 +52,20 @@ import org.connectbot.data.entity.KeyStorageType
 import org.connectbot.data.entity.PortForward
 import org.connectbot.data.entity.Pubkey
 import org.connectbot.service.DisconnectReason
+import org.connectbot.service.PasswordAnswer
 import org.connectbot.service.TerminalBridge
 import org.connectbot.service.TerminalManager
 import org.connectbot.service.requestBiometricAuth
 import org.connectbot.service.requestBooleanPrompt
 import org.connectbot.service.requestHostKeyFingerprintPrompt
+import org.connectbot.service.requestPasswordPrompt
 import org.connectbot.service.requestStringPrompt
+import org.connectbot.usage.UsageActions
 import org.connectbot.util.HostConstants
 import org.connectbot.util.PubkeyUtils
 import org.connectbot.util.SshKeyType
 import org.connectbot.util.UrlUtils
+import solutions.ormus.logos.devtools.LoopbackForward
 import timber.log.Timber
 import java.io.IOException
 import java.io.InputStream
@@ -69,6 +73,7 @@ import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NoRouteToHostException
+import java.net.ServerSocket
 import java.nio.charset.StandardCharsets
 import java.security.KeyPair
 import java.security.NoSuchAlgorithmException
@@ -106,6 +111,9 @@ class SSH :
     private var pubkeysExhausted = false
     private var interactiveCanContinue = true
     private var savedPasswordTried = false
+
+    /** Remember-able passwords typed during the current keyboard-interactive attempt. */
+    private val interactiveAnswers = mutableListOf<PasswordAnswer>()
 
     private var connection: Connection? = null
     private val jumpConnections: MutableList<Connection> = mutableListOf()
@@ -173,6 +181,20 @@ class SSH :
      * when not connected.
      */
     fun execDetailed(command: String, timeoutMs: Long = EXEC_TIMEOUT_MS): CommandOutput = SSH.execDetailed(connection ?: throw IllegalStateException("Not connected"), command, timeoutMs)
+
+    /**
+     * Forward a free loopback port on the phone to [destHost]:[destPort] as the host sees
+     * it, through this connection (the dev preview). Close the result to stop forwarding.
+     * Throws [IOException] when the port cannot be bound.
+     */
+    fun forwardLoopback(destHost: String, destPort: Int): LoopbackForward {
+        val conn = connection ?: throw IllegalStateException("Not connected")
+        val loopback = InetAddress.getByName("127.0.0.1")
+        // sshlib does not say which port it bound, so take a free one first.
+        val port = ServerSocket(0, 1, loopback).use { it.localPort }
+        val forwarder = conn.createLocalPortForwarder(InetSocketAddress(loopback, port), destHost, destPort)
+        return LoopbackForward(port, forwarder::close)
+    }
 
     /**
      * `SHA256:` fingerprint of the host key this connection verified during key
@@ -517,7 +539,10 @@ class SSH :
                 // it blocks until authentication finishes
                 bridge?.outputLine(manager?.res?.getString(R.string.terminal_auth_ki))
                 interactiveCanContinue = false
-                if (connection?.authenticateWithKeyboardInteractive(currentHost.username, this) == true) {
+                interactiveAnswers.clear()
+                val accepted = connection?.authenticateWithKeyboardInteractive(currentHost.username, this) == true
+                rememberPassword(currentHost.id, interactiveAnswers, accepted)
+                if (accepted) {
                     finishConnection()
                 } else {
                     bridge?.outputLine(manager?.res?.getString(R.string.terminal_auth_ki_fail))
@@ -536,12 +561,15 @@ class SSH :
 
                 // Fall back to password prompt
                 bridge?.outputLine(manager?.res?.getString(R.string.terminal_auth_pass))
-                val password = bridge?.requestStringPrompt(
+                val answer = bridge?.requestPasswordPrompt(
                     null,
                     manager?.res?.getString(R.string.prompt_password),
-                    true,
+                    PromptedPassword.canRemember(currentHost.id),
                 )
-                if (password != null && connection?.authenticateWithPassword(currentHost.username, password) == true) {
+                val accepted = answer != null &&
+                    connection?.authenticateWithPassword(currentHost.username, answer.password) == true
+                rememberPassword(currentHost.id, listOfNotNull(answer), accepted)
+                if (accepted) {
                     finishConnection()
                 } else {
                     bridge?.outputLine(manager?.res?.getString(R.string.terminal_auth_pass_fail))
@@ -906,22 +934,20 @@ class SSH :
 
             // Try keyboard-interactive authentication
             if (jc.isAuthMethodAvailable(jumpHost.username, AUTH_KEYBOARDINTERACTIVE)) {
+                val jumpAnswers = mutableListOf<PasswordAnswer>()
                 try {
-                    if (jc.authenticateWithKeyboardInteractive(
-                            jumpHost.username,
-                        ) { name, instruction, numPrompts, prompt, echo ->
-                            val responses = Array(numPrompts) { i ->
-                                val isPassword = echo != null && i < echo.size && !echo[i]
-                                val promptPrefix = manager?.res?.getString(R.string.terminal_jump_prompt, jumpHost.nickname) ?: ""
-                                bridge?.requestStringPrompt(
-                                    instruction,
-                                    "$promptPrefix ${prompt[i]}",
-                                    isPassword,
-                                ) ?: ""
-                            }
-                            responses
+                    val accepted = jc.authenticateWithKeyboardInteractive(
+                        jumpHost.username,
+                    ) { name, instruction, numPrompts, prompt, echo ->
+                        val responses = Array(numPrompts) { i ->
+                            val isPassword = echo != null && i < echo.size && !echo[i]
+                            val promptPrefix = manager?.res?.getString(R.string.terminal_jump_prompt, jumpHost.nickname) ?: ""
+                            askInteractive(jumpHost.id, instruction, "$promptPrefix ${prompt[i]}", prompt[i], isPassword, jumpAnswers)
                         }
-                    ) {
+                        responses
+                    }
+                    rememberPassword(jumpHost.id, jumpAnswers, accepted)
+                    if (accepted) {
                         return true
                     }
                 } catch (e: Exception) {
@@ -945,10 +971,12 @@ class SSH :
 
                 // Fall back to prompting
                 val passwordPrompt = manager?.res?.getString(R.string.terminal_jump_password, jumpHost.nickname)
-                val password = bridge?.requestStringPrompt(null, passwordPrompt, true)
-                if (password != null) {
+                val answer = bridge?.requestPasswordPrompt(null, passwordPrompt, PromptedPassword.canRemember(jumpHost.id))
+                if (answer != null) {
                     try {
-                        if (jc.authenticateWithPassword(jumpHost.username, password)) {
+                        val accepted = jc.authenticateWithPassword(jumpHost.username, answer.password)
+                        rememberPassword(jumpHost.id, listOf(answer), accepted)
+                        if (accepted) {
                             return true
                         }
                     } catch (e: Exception) {
@@ -1368,9 +1396,39 @@ class SSH :
                 }
             }
 
-            bridge?.requestStringPrompt(instruction, prompt[i], isPassword) ?: ""
+            askInteractive(host?.id ?: 0L, instruction, prompt[i], prompt[i], isPassword, interactiveAnswers)
         }
         return responses
+    }
+
+    /**
+     * Ask one keyboard-interactive prompt. An account password prompt on a saved
+     * host offers "Remember password" and its answer joins [answers]; any other
+     * prompt (a verification code, a username) is asked as before.
+     */
+    private fun askInteractive(
+        hostId: Long,
+        instruction: String?,
+        hint: String,
+        serverPrompt: String,
+        isPassword: Boolean,
+        answers: MutableList<PasswordAnswer>,
+    ): String {
+        if (!isPassword || !PromptedPassword.canRemember(hostId) ||
+            !PromptedPassword.isAccountPasswordPrompt(serverPrompt, echo = false)
+        ) {
+            return bridge?.requestStringPrompt(instruction, hint, isPassword) ?: ""
+        }
+        val answer = bridge?.requestPasswordPrompt(instruction, hint, offerRemember = true) ?: return ""
+        answers += answer
+        return answer.password
+    }
+
+    /** Store a typed password once the server accepted it, if "Remember password" was ticked. */
+    private fun rememberPassword(hostId: Long, answers: List<PasswordAnswer>, accepted: Boolean) {
+        val password = PromptedPassword.toSave(hostId, answers, accepted) ?: return
+        manager?.securePasswordStorage?.savePassword(hostId, password)
+        manager?.logUsage(UsageActions.AUTH_PASSWORD_SAVED)
     }
 
     override fun createHost(uri: Uri): Host {

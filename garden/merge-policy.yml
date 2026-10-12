@@ -1,0 +1,51 @@
+# Mercurio merge policy. Machine-readable; garden/DNA.md is the rulebook it serves.
+# A PR merges on its own only when every line under auto_merge.requires holds for its
+# latest commit and no escalate_to_operator rule fires. Everything else waits for the
+# operator's OK in the kitchen thread.
+version: 1
+
+auto_merge:
+  requires:
+    - verdict PASS on head      # the Kitchen seat's verdict, posted on the PR for its latest commit
+    - gate green                # ./gradlew testOssDebugUnitTest spotlessCheck :app:assembleOssDebug, then :app:lintOssDebug alone
+    - leak scan clean           # the kitchen leak scan over the diff, the title and the body
+    - swarm clean               # the review swarm reports PASS, no ISSUES
+  classes: [repo, host]         # Menu atom classes that may merge on their own; eval atoms never do
+
+escalate_to_operator:
+  # A PR that touches any of these paths waits for the operator, whatever the verdict.
+  paths:
+    - app/src/main/java/org/connectbot/transport/**
+    - "**/auth*"
+    - "**/Pubkey*"
+    - "**/SecurePasswordStorage*"
+    - app/src/main/java/solutions/ormus/logos/push/**
+    - host/**
+    - build.gradle.kts            # root build: spotless, app-versioning and release wiring
+    - app/build.gradle.kts        # signing, release build type, versioning
+    - gradle.properties
+    - gradle/**
+    - settings*
+    - "**/AndroidManifest.xml"
+    - "**/res/xml/network_security_config.xml"
+    - garden/**
+    - pantry/README.md
+    - docs/PUSH.md
+  # A PR with any of these waits for the operator too.
+  on:
+    - verdict FAIL
+    - verdict INCONCLUSIVE
+    - diff over 400 logic lines
+    - new dependency              # a new coordinate in gradle/libs.versions.toml or a build file
+    - new permission in the manifest
+
+post_merge:
+  - tag
+  - build with proof            # the APK's versionName ends in the merged commit's short SHA
+  - emulator smoke
+  - publish apk
+  - send bare link
+  - publish-public              # the release scan runs first; a hit stops the publish
+
+rollback:
+  - revert the merge on a red nightly gate, then heal

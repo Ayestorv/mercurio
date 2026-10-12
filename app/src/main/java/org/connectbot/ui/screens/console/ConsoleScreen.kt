@@ -24,6 +24,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.VisibleForTesting
@@ -56,7 +57,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Difference
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInFull
@@ -170,6 +174,12 @@ import org.connectbot.ui.components.copyDiagnostics
 import org.connectbot.ui.machines.MachinesSection
 import org.connectbot.ui.machines.MachinesViewModel
 import org.connectbot.ui.navigation.NavDestinations
+import org.connectbot.ui.screens.chat.AgentChat
+import org.connectbot.ui.screens.chat.ChatViewDialog
+import org.connectbot.ui.screens.devtools.DiffDialog
+import org.connectbot.ui.screens.devtools.FilesDialog
+import org.connectbot.ui.screens.devtools.PreviewDialog
+import org.connectbot.ui.screens.herd.AgentsBoardDialog
 import org.connectbot.ui.screens.herd.HerdDialog
 import org.connectbot.ui.screens.herd.herdrActionLabel
 import org.connectbot.ui.screens.reader.OutputReaderDialog
@@ -186,8 +196,10 @@ import org.connectbot.util.loadLatestScreenshot
 import org.connectbot.util.rememberTerminalTypefaceResultFromStoredValue
 import solutions.ormus.logos.commands.PaletteScreen
 import solutions.ormus.logos.commands.SlashCommand
+import solutions.ormus.logos.herd.Herd
 import solutions.ormus.logos.herd.HerdResult
 import solutions.ormus.logos.herd.HerdrAction
+import solutions.ormus.logos.herd.HerdrCommands
 import solutions.ormus.logos.herd.HerdrKeys
 import solutions.ormus.logos.herd.HerdrSwipe
 import timber.log.Timber
@@ -348,14 +360,31 @@ fun ConsoleScreen(
     var showDisconnectDialog by remember { mutableStateOf(false) }
     var showTextInputDialog by remember { mutableStateOf(false) }
     var showOutputReader by remember { mutableStateOf(false) }
+    // The session whose agent chat is open, if any.
+    var chatBridge by remember { mutableStateOf<TerminalBridge?>(null) }
+
+    // The Herdr session that chat's pane is in: the terminal's for Read, the panel's for Chat.
+    var chatSession by remember { mutableStateOf(HerdrCommands.DEFAULT_SESSION) }
+
+    // The pane the chat opens on: an Agents board card's; null for the focused pane.
+    var chatPane by remember { mutableStateOf<String?>(null) }
+
+    // The session whose Agents board is open, if any.
+    var boardBridge by remember { mutableStateOf<TerminalBridge?>(null) }
     var showWishDialog by remember { mutableStateOf(false) }
+    // The session whose dev preview is open, if any.
+    var previewBridge by remember { mutableStateOf<TerminalBridge?>(null) }
     // The Herdr session whose Herd screen is open, and the one whose Herdr panel (in the
     // compose bar, above the keys) is open, if any.
     var herdScreenBridge by remember { mutableStateOf<TerminalBridge?>(null) }
     var herdrPanelBridge by remember { mutableStateOf<TerminalBridge?>(null) }
+    // The session whose diff viewer is open, if any.
+    var diffBridge by remember { mutableStateOf<TerminalBridge?>(null) }
     // The session whose slash menu is open, if any, and whether the palette is.
     var slashBridge by remember { mutableStateOf<TerminalBridge?>(null) }
     var showPalette by remember { mutableStateOf(false) }
+    // The session whose file browser is open, if any.
+    var filesBridge by remember { mutableStateOf<TerminalBridge?>(null) }
     // Measured height of the persistent compose bar, so the terminal reserves
     // space below it and is never covered by it.
     var composeBarHeightPx by remember { mutableIntStateOf(0) }
@@ -384,10 +413,10 @@ fun ConsoleScreen(
     val isBiometricPromptActive = promptState is PromptRequest.BiometricPrompt
 
     // Check if any modal (menu or dialog) is currently active
-    val anyModalActive = showMenu || showUrlScanDialog || showResizeDialog ||
-        showDisconnectDialog || showTextInputDialog || isBiometricPromptActive || currentAuthBanner != null ||
-        showOutputReader || herdScreenBridge != null ||
-        slashBridge != null || showPalette
+    val anyModalActive = filesBridge != null || showMenu || showUrlScanDialog || showResizeDialog ||
+        showDisconnectDialog || showTextInputDialog || isBiometricPromptActive || currentAuthBanner != null || previewBridge != null ||
+        showOutputReader || chatBridge != null || herdScreenBridge != null || boardBridge != null ||
+        slashBridge != null || showPalette || diffBridge != null
 
     /**
      * Unified interaction handler for terminal and keyboard.
@@ -921,6 +950,19 @@ fun ConsoleScreen(
                             var swipesFired by remember { mutableIntStateOf(0) }
                             var swipeProblem by remember { mutableStateOf<String?>(null) }
 
+                            // One time ever, the first time a Herdr session opens: swipes move between tabs and workspaces.
+                            var swipeIntroSeen by remember { mutableStateOf(prefs.getBoolean(HERDR_SWIPE_INTRO_SEEN, false)) }
+                            fun putSwipeIntroAway() {
+                                if (swipeIntroSeen) return
+                                swipeIntroSeen = true
+                                prefs.edit { putBoolean(HERDR_SWIPE_INTRO_SEEN, true) }
+                            }
+
+                            // Taps reach a program that asked for the mouse (Herdr's sidebar) as clicks.
+                            // Not under a forced size: termlib then picks its own font size.
+                            val taps = remember { TerminalTaps() }
+                            val cellSize = rememberCellSize(fontResult.typeface, fontSize)
+
                             Terminal(
                                 terminalEmulator = bridge.terminalEmulator,
                                 modifier = Modifier
@@ -930,13 +972,15 @@ fun ConsoleScreen(
                                     )
                                     .herdrSwipes(
                                         enabled = { swipeBridge.runsHerdr && selectionController?.isSelectionActive != true },
-                                    ) { swipe ->
+                                    ) { swipe, fingers ->
                                         haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                                        usage.log(usageIdFor(swipe))
+                                        usage.log(usageIdFor(swipe, fingers, usesSwitcher(swipeBridge, swipe)))
                                         swipeProblem = runHerdrSwipe(swipeBridge, swipe)
                                         lastSwipe = swipe
                                         swipesFired++
+                                        putSwipeIntroAway()
                                     }
+                                    .terminalTaps(taps)
                                     .testTag("terminal"),
                                 typeface = fontResult.typeface,
                                 initialFontSize = fontSize.sp,
@@ -946,7 +990,13 @@ fun ConsoleScreen(
                                 forcedSize = forceSize,
                                 modifierManager = bridge.keyHandler,
                                 onSelectionControllerAvailable = { selectionController = it },
-                                onTerminalTap = { handleTerminalInteraction(isTerminalTap = true) },
+                                onTerminalTap = {
+                                    val at = taps.take()
+                                    if (at != null && forceSize == null && clickTap(bridge, at, cellSize)) {
+                                        usage.log(UsageActions.TERMINAL_MOUSE_CLICK)
+                                    }
+                                    handleTerminalInteraction(isTerminalTap = true)
+                                },
                                 onImeVisibilityChanged = { visible ->
                                     imeVisible = visible
                                 },
@@ -987,6 +1037,19 @@ fun ConsoleScreen(
                                         }
                                     },
                             )
+
+                            val herdrUp by (bridge.herd?.snapshot ?: NO_HERDR_SNAPSHOT).collectAsState()
+                            if (!swipeIntroSeen && (Herd.runsHerdr(bridge.host) || herdrUp != null)) {
+                                HerdrSwipeIntro(
+                                    onDismiss = {
+                                        usage.log(UsageActions.HERDR_SWIPE_INTRO_DISMISS)
+                                        putSwipeIntroAway()
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .padding(top = Ormus.spacing.sm),
+                                )
+                            }
 
                             HerdrSwipeHint(
                                 swipe = lastSwipe,
@@ -1040,13 +1103,39 @@ fun ConsoleScreen(
                                                 }
                                             }
                                         },
-                                        onRead = { showOutputReader = true },
+                                        // An agent pane reads as a chat; anything else as its output.
+                                        onRead = {
+                                            val attached = bridge.herd?.attached?.value ?: HerdrCommands.DEFAULT_SESSION
+                                            if (AgentChat.target(bridge.herd?.snapshotOf(attached)) != null) {
+                                                usage.log(UsageActions.CHAT_OPEN)
+                                                chatSession = attached
+                                                chatPane = null
+                                                chatBridge = bridge
+                                            } else {
+                                                showOutputReader = true
+                                            }
+                                        },
+                                        onChat = {
+                                            usage.log(UsageActions.CHAT_OPEN)
+                                            herdrPanelBridge = null
+                                            chatSession = bridge.herd?.chosen?.value ?: HerdrCommands.DEFAULT_SESSION
+                                            chatPane = null
+                                            chatBridge = bridge
+                                        },
+                                        onBoard = {
+                                            herdrPanelBridge = null
+                                            boardBridge = bridge
+                                        },
                                         // Herdr key once the session's Herdr side is up.
                                         herdrPanelOpen = herdrPanelBridge === bridge,
                                         onHerdrPanelChange = bridge.herd?.let {
                                             { open: Boolean -> herdrPanelBridge = if (open) bridge else null }
                                         },
                                         onSlashMenu = { slashBridge = bridge },
+                                        onDiff = {
+                                            herdrPanelBridge = null
+                                            diffBridge = bridge
+                                        },
                                         draft = dictationDraft,
                                         modifier = barModifier,
                                     )
@@ -1114,8 +1203,49 @@ fun ConsoleScreen(
                 WishDialog(onDismiss = { showWishDialog = false })
             }
 
+            previewBridge?.let { bridge ->
+                PreviewDialog(bridge = bridge, onDismiss = { previewBridge = null })
+            }
+
             if (showOutputReader && currentBridge != null) {
                 OutputReaderDialog(bridge = currentBridge, onDismiss = { showOutputReader = false })
+            }
+
+            chatBridge?.let { bridge ->
+                ChatViewDialog(
+                    bridge = bridge,
+                    session = chatSession,
+                    pane = chatPane,
+                    onDismiss = { chatBridge = null },
+                    onOpenReader = {
+                        chatBridge = null
+                        showOutputReader = true
+                    },
+                )
+            }
+
+            // The Agents board stays open under a chat opened from it; a jump closes it.
+            boardBridge?.let { bridge ->
+                bridge.herd?.let { herd ->
+                    AgentsBoardDialog(
+                        session = herd,
+                        onChat = { card ->
+                            chatSession = card.session
+                            chatPane = card.paneId
+                            chatBridge = bridge
+                        },
+                        onJump = { card ->
+                            boardBridge = null
+                            if (bridge !== currentBridge) onSelectSession(bridge)
+                            bridge.jumpToHerdrTab(card.jumpTarget(), card.paneId)?.let { why -> Toast.makeText(context, why, Toast.LENGTH_LONG).show() }
+                        },
+                        onDismiss = { boardBridge = null },
+                    )
+                }
+            }
+
+            diffBridge?.let { bridge ->
+                DiffDialog(bridge = bridge, onDismiss = { diffBridge = null })
             }
 
             herdScreenBridge?.let { herdBridge ->
@@ -1134,6 +1264,10 @@ fun ConsoleScreen(
                     },
                     onDismiss = { herdScreenBridge = null },
                 )
+            }
+
+            filesBridge?.let { bridge ->
+                FilesDialog(bridge = bridge, onDismiss = { filesBridge = null })
             }
 
             slashBridge?.let { bridge ->
@@ -1346,6 +1480,20 @@ fun ConsoleScreen(
                                     },
                                 )
 
+                                // Files: the repository tree at a commit, read with git over SSH.
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.files_title)) },
+                                    onClick = {
+                                        usage.log(UsageActions.FILES_OPEN)
+                                        showMenu = false
+                                        filesBridge = currentBridge
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.FolderOpen, contentDescription = null)
+                                    },
+                                    enabled = sessionOpen && currentBridge?.transport is SSH,
+                                )
+
                                 // Wish list: one field for a wish, typed or dictated.
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.wish_menu_item)) },
@@ -1357,6 +1505,20 @@ fun ConsoleScreen(
                                     leadingIcon = {
                                         Icon(Icons.Default.AutoAwesome, contentDescription = null)
                                     },
+                                )
+
+                                // Diff: the work tree an agent is changing, read with git over SSH.
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.diff_title)) },
+                                    onClick = {
+                                        usage.log(UsageActions.DIFF_OPEN)
+                                        showMenu = false
+                                        diffBridge = currentBridge
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Difference, contentDescription = null)
+                                    },
+                                    enabled = sessionOpen && currentBridge?.transport is SSH,
                                 )
 
                                 // Disconnect/Close
@@ -1407,6 +1569,20 @@ fun ConsoleScreen(
                                         Icon(Icons.Default.Inbox, contentDescription = null)
                                     },
                                     enabled = currentBridge != null,
+                                )
+
+                                // Preview: a dev server on the host, forwarded over SSH into an in-app browser.
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.preview_title)) },
+                                    onClick = {
+                                        usage.log(UsageActions.PREVIEW_OPEN)
+                                        showMenu = false
+                                        previewBridge = currentBridge
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Language, contentDescription = null)
+                                    },
+                                    enabled = sessionOpen && currentBridge?.transport is SSH,
                                 )
 
                                 // Resize

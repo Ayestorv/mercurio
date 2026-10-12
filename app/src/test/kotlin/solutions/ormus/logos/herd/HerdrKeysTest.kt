@@ -89,6 +89,59 @@ class HerdrKeysTest {
     }
 
     @Test
+    fun switchWorkspace_isThePickerKey_anArrow_thenEnter() {
+        // Herdr's defaults: workspace_picker = "prefix+w", navigate_workspace_up/down = "up"/"down".
+        val stock = HerdrKeys.DEFAULT
+        assertEquals(
+            listOf(HerdrStroke.Bytes(ctrlB + "w"), HerdrStroke.Key(HerdrTermKey.DOWN), HerdrStroke.Key(HerdrTermKey.ENTER)),
+            stock.switchWorkspace(down = true),
+        )
+        assertEquals(
+            listOf(HerdrStroke.Bytes(ctrlB + "w"), HerdrStroke.Key(HerdrTermKey.UP), HerdrStroke.Key(HerdrTermKey.ENTER)),
+            stock.switchWorkspace(down = false),
+        )
+        assertNull(stock.switchProblem(down = true))
+        // Sun's config moves the prefix to ctrl+space and leaves the navigate keys alone.
+        val sun = HerdrKeys.fromConfig(commandsFixture("herdr/config-sun.toml"))
+        assertEquals(
+            listOf(HerdrStroke.Bytes(nul + "w"), HerdrStroke.Key(HerdrTermKey.DOWN), HerdrStroke.Key(HerdrTermKey.ENTER)),
+            sun.switchWorkspace(down = true),
+        )
+    }
+
+    @Test
+    fun switchWorkspace_followsCustomBindings() {
+        val keys = HerdrKeys.fromConfig(
+            """
+            [keys]
+            workspace_picker = "alt+w"
+            navigate_workspace_up = ["shift+up", "K"]
+            navigate_workspace_down = "ctrl+n"
+            """.trimIndent(),
+        )
+        assertEquals(HerdrNavigateKey("K", HerdrStroke.Bytes("K")), keys.workspaceUp)
+        assertEquals(
+            listOf(HerdrStroke.Bytes(esc + "w"), HerdrStroke.Bytes(14.toChar().toString()), HerdrStroke.Key(HerdrTermKey.ENTER)),
+            keys.switchWorkspace(down = true),
+        )
+        assertEquals(HerdrStroke.Bytes(esc + "w"), keys.switchWorkspace(down = false)?.first())
+        // Herdr's names for the arrows, in any case, stay arrows.
+        assertEquals(HerdrStroke.Key(HerdrTermKey.LEFT), HerdrKeys.fromConfig("[keys]\nnavigate_workspace_up = \"Left\"\n").workspaceUp.stroke)
+    }
+
+    @Test
+    fun switchWorkspace_offWhenAKeyCannotBeSent_andSaysWhy() {
+        val picker = HerdrKeys.fromConfig("[keys]\nworkspace_picker = \"cmd+w\"\n")
+        assertNull(picker.switchWorkspace(down = true))
+        assertTrue(picker.switchProblem(down = true)!!, picker.switchProblem(down = true)!!.contains("workspace_picker to \"cmd+w\""))
+
+        val down = HerdrKeys.fromConfig("[keys]\nnavigate_workspace_down = \"ctrl+down\"\nnavigate_workspace_up = \"\"\n")
+        assertNull(down.switchWorkspace(down = true))
+        assertTrue(down.switchProblem(down = true)!!, down.switchProblem(down = true)!!.contains("navigate_workspace_down to \"ctrl+down\""))
+        assertEquals("Herdr's config leaves navigate_workspace_up unbound.", down.switchProblem(down = false))
+    }
+
+    @Test
     fun anArray_usesItsFirstPrefixBinding_evenOverSeveralLines() {
         val keys = HerdrKeys.fromConfig(
             """

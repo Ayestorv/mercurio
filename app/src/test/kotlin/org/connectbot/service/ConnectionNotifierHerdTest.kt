@@ -102,6 +102,24 @@ class ConnectionNotifierHerdTest {
     }
 
     @Test
+    fun samePaneInAnotherSession_keepsItsOwnNotification_andCarriesItsSession() {
+        val notifier = ConnectionNotifier()
+        notifier.showHerdNotification(service, host, Notice.NeedsYou(agent, "~Demo", "1"))
+        notifier.showHerdNotification(service, host, Notice.NeedsYou(agent, "ops", "1", session = "work"))
+
+        val posted = shadowOf(manager).allNotifications
+        assertEquals(2, posted.size)
+        val work = posted.single { it.extras.getCharSequence("android.text").toString().startsWith("ops") }
+        assertEquals("work", shadowOf(work.contentIntent).savedIntent.getStringExtra(MainActivity.EXTRA_HERD_SESSION))
+        assertEquals("work", shadowOf(work.actions[0].actionIntent).savedIntent.getStringExtra(ConnectionNotifier.EXTRA_HERD_SESSION))
+        assertTrue(notifier.isHerdNoticeShowing(service, host.id, Notice.NeedsYou(agent, null, null, session = "work")))
+
+        // Answering the work session's pane clears its notice only.
+        notifier.showHerdAnswer(service, host, "work", "w1:p1", "claude", HerdAnswerOutcome.Sent)
+        assertEquals("~Demo / 1 · Docs site build", shadowOf(manager).allNotifications.single().extras.getCharSequence("android.text").toString())
+    }
+
+    @Test
     fun needsYou_provenAgent_approveAndDenyAskForTheUnlock_andShowThePane() {
         val tail = "Do you want to proceed?\n\u276F 1. Yes\n  2. No"
         ConnectionNotifier().showHerdNotification(service, host, Notice.NeedsYou(agent, "~Demo", "1", paneTail = tail))
@@ -132,7 +150,7 @@ class ConnectionNotifierHerdTest {
     fun answerSent_clearsTheNeedsYou() {
         val notifier = ConnectionNotifier()
         notifier.showHerdNotification(service, host, Notice.NeedsYou(agent, "~Demo", "1"))
-        notifier.showHerdAnswer(service, host, "w1:p1", "claude", HerdAnswerOutcome.Sent)
+        notifier.showHerdAnswer(service, host, "default", "w1:p1", "claude", HerdAnswerOutcome.Sent)
 
         assertTrue(shadowOf(manager).allNotifications.isEmpty())
     }
@@ -141,14 +159,14 @@ class ConnectionNotifierHerdTest {
     fun answerNotSent_replacesTheNeedsYouWithWhy_withoutActions() {
         val notifier = ConnectionNotifier()
         notifier.showHerdNotification(service, host, Notice.NeedsYou(agent, "~Demo", "1"))
-        notifier.showHerdAnswer(service, host, "w1:p1", "claude", HerdAnswerOutcome.NotBlocked)
+        notifier.showHerdAnswer(service, host, "default", "w1:p1", "claude", HerdAnswerOutcome.NotBlocked)
 
         val notBlocked = shadowOf(manager).allNotifications.single()
         assertEquals("claude on Sun is no longer waiting", notBlocked.extras.getCharSequence("android.title").toString())
         assertEquals("Nothing was sent.", notBlocked.extras.getCharSequence("android.text").toString())
         assertTrue(notBlocked.actions.isNullOrEmpty())
 
-        notifier.showHerdAnswer(service, host, "w1:p1", "claude", HerdAnswerOutcome.Failed("pane w1:p1 not found"))
+        notifier.showHerdAnswer(service, host, "default", "w1:p1", "claude", HerdAnswerOutcome.Failed("pane w1:p1 not found"))
         val failed = shadowOf(manager).allNotifications.single()
         assertEquals("Could not answer claude on Sun", failed.extras.getCharSequence("android.title").toString())
         assertEquals("pane w1:p1 not found", failed.extras.getCharSequence("android.text").toString())
