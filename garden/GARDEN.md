@@ -1,10 +1,10 @@
 # Garden: Mercurio
 
-As of 2026-10-10.
+As of 2026-10-12.
 
 ## Plot
 
-- Copy: repo clone at 0a0e93b3 (.)
+- Copy: repo clone at 2d22ee74 (.)
 - Planted: 0 skills (0 principles), 0 commands, 0 guide pages
 
 ## Beds
@@ -16,19 +16,20 @@ As of 2026-10-10.
 
 ## Waiting for review
 
-- none
-- Goal issue open: #58 [menu] Ormus brand re-skin from tokens (`ormus-reskin`)
+- PR #131 docs(garden): the leak scan's scope, names in the diff only (garden/leak-scope)
+- PR #124 chore(pantry): refresh the Menu after three shipped atoms (pantry/menu-refresh-2026-10-10)
+- Goal issue open: #130 [menu] Approve and deny guarded by Herdr's seq (`herd-approve`)
 
 ## Weeds
 
-- No gardener PR open
+- Pulled, waiting for merge: PR #131 docs(garden): the leak scan's scope, names in the diff only
 - No weed pulls in history
 - Checks planted: 152 commits touched scripts/check.sh or .github/workflows (last: 4272bb6a 2026-10-04 chore(ci): remove hosted CI; the local gate is the gate (#64))
 - Weed kinds in WEEDS.md: 3, 3 with a check
 
 ## Soil
 
-- This clone: 0a0e93b3, differs from main 0a0e93b, uncommitted changes
+- This clone: 2d22ee7, current
 
 ## Water
 

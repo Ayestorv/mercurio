@@ -11,6 +11,11 @@ auto_merge:
     - leak scan clean           # the kitchen leak scan over the diff, the title and the body
     - swarm clean               # the review swarm reports PASS, no ISSUES
   classes: [repo, host]         # Menu atom classes that may merge on their own; eval atoms never do
+  branches: [build, dream, garden]  # garden: the gardener's weed pulls go through verify like any build (operator's call, 2026-10-12)
+  without_verdict:              # generated files the loops write; merged on the branch and the paths alone
+    - branches: [garden/report-]  # the garden report: one file, no model, written by the garden loop
+      paths: [garden/GARDEN.md]
+      post_merge: false           # a report is not a release: no tag, no APK, no link
 
 escalate_to_operator:
   # A PR that touches any of these paths waits for the operator, whatever the verdict.
@@ -28,7 +33,9 @@ escalate_to_operator:
     - settings*
     - "**/AndroidManifest.xml"
     - "**/res/xml/network_security_config.xml"
-    - garden/**
+    - garden/DNA.md               # the genome, the policy and the garden's own rules stay the operator's
+    - garden/merge-policy.yml
+    - garden/README.md
     - pantry/README.md
     - docs/PUSH.md
   # A PR with any of these waits for the operator too.

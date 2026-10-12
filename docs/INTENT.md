@@ -2,7 +2,7 @@
 
 Mercurio is a dictation-first SSH and terminal client for Android, forked from
 ConnectBot. It exists for one workflow: driving AI coding agents — Claude Code,
-Codex, Grok — running in `tmux` on remote machines over Tailscale, from a phone,
+Codex, Grok — running in Herdr on remote machines over Tailscale, from a phone,
 mostly by voice (Wispr Flow).
 
 That focus, not general-purpose SSH, decides every feature. The shorthand is

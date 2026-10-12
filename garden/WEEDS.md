@@ -11,3 +11,4 @@ The second row of a kind must name a check. The stack's `garden.py --repeats-onl
 | 2026-10-03 | spotless | formatting that failed `spotlessCheck`: two `style(console): satisfy spotless` commits and trailing spaces in the pantry templates (#34) | `./gradlew spotlessCheck` in the gate, over Kotlin, Gradle, XML, TOML and Markdown |
 | 2026-10-04 | usage-id-drift | ids in `UsageActions.ALL` and `docs/usage-actions.txt` unequal or out of order; two PRs appending at once need a one-line rebase (#118, #120) | `UsageSchemaTest` in the gate (#56) |
 | 2026-10-05 | personal-values | the maker's addresses, usernames, machine names, home paths and pane titles in defaults, docs, tests and fixtures (#100, #101, #104, #107) | the release scan in the ops repo (deny list plus gitleaks) and the dream cycle leak scan |
+| 2026-10-12 | doc-drift | docs/INTENT.md names tmux as the agent substrate where DNA P1 and P2 say Herdr | none |
