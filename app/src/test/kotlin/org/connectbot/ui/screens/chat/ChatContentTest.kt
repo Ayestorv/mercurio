@@ -18,9 +18,11 @@
 package org.connectbot.ui.screens.chat
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -33,12 +35,14 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.connectbot.ui.theme.ConnectBotTheme
 import org.connectbot.usage.LocalUsageLog
 import org.connectbot.usage.UsageActions
 import org.connectbot.usage.UsageLog
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -69,6 +73,7 @@ class ChatContentTest {
         logged: MutableList<String> = mutableListOf(),
         sent: MutableList<String> = mutableListOf(),
         answers: MutableList<HerdAnswer> = mutableListOf(),
+        windowInsets: WindowInsets = WindowInsets(0),
     ) {
         composeTestRule.setContent {
             ConnectBotTheme {
@@ -81,6 +86,7 @@ class ChatContentTest {
                         onSend = { sent += it },
                         onAnswer = { answers += it },
                         onOpenReader = {},
+                        windowInsets = windowInsets,
                     )
                 }
             }
@@ -101,6 +107,15 @@ class ChatContentTest {
         composeTestRule.onNodeWithText("/ WORKING").assertExists()
         composeTestRule.onNodeWithText("claude · Demo / app").assertExists()
         composeTestRule.onAllNodesWithTag(CHAT_WAITING_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun header_startsBelowTheStatusBar() {
+        val statusBar = 48.dp
+        show(state(HerdrAgentStatus.WORKING), windowInsets = WindowInsets(top = statusBar))
+
+        val title = composeTestRule.onNodeWithText("claude · Demo / app").getUnclippedBoundsInRoot()
+        assertTrue("title top ${title.top} is under the status bar", title.top >= statusBar)
     }
 
     @Test

@@ -25,11 +25,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -100,6 +102,9 @@ const val CHAT_TOOL_TAG = "chat_tool"
 const val CHAT_REPLY_TAG = "chat_reply"
 const val CHAT_WAITING_TAG = "chat_waiting"
 
+/** Full screen, drawn edge to edge: [ChatContent] keeps its own parts clear of the bars. */
+internal val CHAT_DIALOG_PROPERTIES = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+
 // A user bubble leaves the left of the screen to the agent, like a messaging app.
 private val BUBBLE_MAX_WIDTH = 320.dp
 
@@ -131,7 +136,7 @@ fun ChatViewDialog(
     val state by viewModel.uiState.collectAsState()
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        properties = CHAT_DIALOG_PROPERTIES,
     ) {
         ChatContent(
             state = state,
@@ -141,7 +146,6 @@ fun ChatViewDialog(
             onSend = { viewModel.send(host, it) },
             onAnswer = { viewModel.answer(host, it) },
             onOpenReader = onOpenReader,
-            modifier = Modifier.imePadding(),
         )
     }
 }
@@ -157,6 +161,8 @@ fun ChatContent(
     onAnswer: (HerdAnswer) -> Unit,
     onOpenReader: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The bars and keyboard to keep clear of: the dialog draws edge to edge, under the status bar. */
+    windowInsets: WindowInsets = WindowInsets.safeDrawing,
 ) {
     val usage = LocalUsageLog.current
     val listState = rememberLazyListState()
@@ -177,7 +183,11 @@ fun ChatContent(
     }
 
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(windowInsets),
+        ) {
             ChatHeader(
                 state = state,
                 fallbackTitle = fallbackTitle,

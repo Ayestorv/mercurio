@@ -18,16 +18,24 @@
 package org.connectbot.ui.screens.chat
 
 import androidx.activity.ComponentActivity
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.connectbot.ui.theme.ConnectBotTheme
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -58,7 +66,8 @@ class ChatScreenshotTest {
         Thread.sleep(SCREENCAP_SETTLE_MS)
     }
 
-    private fun show(status: HerdrAgentStatus) {
+    // The test activity draws edge to edge, as the chat dialog does.
+    private fun show(status: HerdrAgentStatus, inDialog: Boolean = false) {
         val state = ChatUiState(
             target = ChatTarget(paneId = "w1:p1", agent = "claude", sessionId = "demo", status = status, title = "Dark mode toggle", place = "Demo / app"),
             items = payload.items,
@@ -66,7 +75,7 @@ class ChatScreenshotTest {
         )
         composeTestRule.setContent {
             ConnectBotTheme {
-                Box(Modifier.safeDrawingPadding()) {
+                val chat = @Composable {
                     ChatContent(
                         state = state,
                         fallbackTitle = "Demo",
@@ -77,6 +86,7 @@ class ChatScreenshotTest {
                         onOpenReader = {},
                     )
                 }
+                if (inDialog) Dialog(onDismissRequest = {}, properties = CHAT_DIALOG_PROPERTIES) { chat() } else chat()
             }
         }
     }
@@ -92,6 +102,41 @@ class ChatScreenshotTest {
         show(HerdrAgentStatus.BLOCKED)
         composeTestRule.onNodeWithTag(CHAT_LIST_TAG).performScrollToNode(hasTestTag(CHAT_WAITING_TAG))
         screencap("chat-waiting")
+    }
+
+    /** The status bar's height on this device, in pixels. */
+    private fun statusBarTop(): Int {
+        val insets = checkNotNull(ViewCompat.getRootWindowInsets(composeTestRule.activity.window.decorView))
+        return insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+    }
+
+    private fun assertBelowStatusBar(text: String) {
+        composeTestRule.waitForIdle()
+        val top = composeTestRule.onNodeWithText(text).fetchSemanticsNode().positionOnScreen.y
+        val bar = statusBarTop()
+        assertTrue("status bar $bar px", bar > 0)
+        assertTrue("$text top $top px is under the status bar ($bar px)", top >= bar)
+    }
+
+    @Test
+    fun inTheDialog_titleBelowTheStatusBar() {
+        show(HerdrAgentStatus.WORKING, inDialog = true)
+        assertBelowStatusBar("claude · Demo / app")
+        screencap("chat-dialog")
+    }
+
+    /** Diff, Files, Preview, Herd and the reader open this way: the dialog window fits the bars itself. */
+    @Test
+    fun fullScreenDialog_fitsTheBars() {
+        composeTestRule.setContent {
+            ConnectBotTheme {
+                Dialog(onDismissRequest = {}, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+                    Surface(Modifier.fillMaxSize()) { Text("Top of the dialog") }
+                }
+            }
+        }
+        assertBelowStatusBar("Top of the dialog")
+        screencap("chat-full-screen-dialog")
     }
 
     private companion object {
