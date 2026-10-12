@@ -18,10 +18,13 @@
 package org.connectbot.ui.screens.herd
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
@@ -29,14 +32,19 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onChildAt
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.connectbot.usage.LocalUsageLog
 import org.connectbot.usage.UsageActions
 import org.connectbot.usage.UsageLog
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -78,12 +86,19 @@ class AgentsBoardScreenTest {
     private val chats = mutableListOf<String>()
     private val jumps = mutableListOf<String>()
     private val answers = mutableListOf<String>()
+    private val replies = mutableListOf<String>()
     private val reads = mutableListOf<String>()
     private val logged = mutableListOf<String>()
 
     private fun BoardCard.id() = "$session/$paneId"
 
-    private fun show(shown: List<BoardCard> = cards, loading: Boolean = false, answer: HerdAnswerOutcome? = null) {
+    private fun show(
+        shown: List<BoardCard> = cards,
+        loading: Boolean = false,
+        answer: HerdAnswerOutcome? = null,
+        screen: String = "Do you want to proceed?\n> 1. Yes\nOpus  ~/src  ctx 42% (84k/200k)",
+        windowInsets: WindowInsets = WindowInsets(0),
+    ) {
         composeTestRule.setContent {
             CompositionLocalProvider(LocalUsageLog provides UsageLog { logged += it }) {
                 AgentsBoardContent(
@@ -95,13 +110,15 @@ class AgentsBoardScreenTest {
                     onChat = { chats += it.id() },
                     onJump = { jumps += it.id() },
                     onAnswer = { card, reply -> answers += "${card.id()} $reply" },
+                    onReply = { card, text -> replies += "${card.id()} $text" },
                     readScreen = { card ->
                         reads += card.id()
-                        "Do you want to proceed?\n> 1. Yes\nOpus  ~/src  ctx 42% (84k/200k)"
+                        screen
                     },
                     onRefresh = {},
                     onClose = {},
                     answer = answer,
+                    windowInsets = windowInsets,
                 )
             }
         }
@@ -219,6 +236,59 @@ class AgentsBoardScreenTest {
         composeTestRule.onAllNodes(hasText("Do you want to proceed?", substring = true)).assertCountEquals(1)
         assertEquals(listOf(UsageActions.BOARD_MORE), logged)
         assertEquals("opening a card is not a tap on it", emptyList<String>(), chats)
+    }
+
+    @Test
+    fun content_staysClearOfTheStatusAndNavigationBars() {
+        // Taller than the board's top bar, so a board that ignores the insets draws its first header under it.
+        val bar = 100.dp
+        show(windowInsets = WindowInsets(top = bar, bottom = bar))
+
+        val headers = composeTestRule.onAllNodesWithTag(BOARD_HEADER_TAG)
+        val firstHeader = (0 until 4).minOf { headers[it].getUnclippedBoundsInRoot().top }
+        assertTrue("first header top $firstHeader is under the status bar", firstHeader >= bar)
+        // The list's cards scroll inside it, so its end is where the last card can show.
+        val list = composeTestRule.onNode(hasScrollAction()).getUnclippedBoundsInRoot()
+        val navigationBarTop = composeTestRule.onRoot().getUnclippedBoundsInRoot().bottom - bar
+        assertTrue("the list ends at ${list.bottom}, under the navigation bar at $navigationBarTop", list.bottom <= navigationBarTop)
+    }
+
+    @Test
+    fun needsYouCard_showsTheAskOffItsScreen_notTheScreensTail() {
+        show(
+            screen = """
+                ● Update(src/App.kt)
+                ╭──────────────────────────────────────╮
+                │ Do you want to make this edit to App.kt? │
+                │ ❯ 1. Yes                              │
+                │   2. Yes, allow all edits this session │
+                │   3. No, and tell Claude what to do differently (esc) │
+                ╰──────────────────────────────────────╯
+                Opus  ~/src  ctx 42% (84k/200k)
+            """.trimIndent(),
+        )
+
+        assertEquals("only the waiting agent's screen is read", listOf("work/w1:p1"), reads)
+        composeTestRule.onNodeWithText("Do you want to make this edit to App.kt?").assertIsDisplayed()
+        composeTestRule.onNodeWithText("1. Yes").assertIsDisplayed()
+        composeTestRule.onNodeWithText("2. Yes, allow all edits this session").assertIsDisplayed()
+        composeTestRule.onNodeWithText("3. No, and tell Claude what to do differently (esc)").assertIsDisplayed()
+        composeTestRule.onAllNodes(hasText("ctx 42%", substring = true)).assertCountEquals(0)
+        composeTestRule.onNodeWithText("Approve").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Deny").assertIsDisplayed()
+    }
+
+    @Test
+    fun reply_typesIntoThatSessionsPane() {
+        show()
+
+        composeTestRule.onAllNodesWithTag(BOARD_REPLY_TAG).assertCountEquals(1)
+        composeTestRule.onNodeWithTag(BOARD_REPLY_TAG).performTextInput("use the second option")
+        composeTestRule.onNodeWithText("Send").performClick()
+
+        assertEquals(listOf("work/w1:p1 use the second option"), replies)
+        assertEquals(listOf(UsageActions.BOARD_REPLY), logged)
+        assertEquals("a reply is not a tap on the card", emptyList<String>(), chats)
     }
 
     @Test

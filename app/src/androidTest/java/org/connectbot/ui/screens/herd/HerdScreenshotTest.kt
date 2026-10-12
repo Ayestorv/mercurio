@@ -31,17 +31,23 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
-import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.edit
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.CoroutineScope
@@ -51,6 +57,7 @@ import org.connectbot.ui.components.NeedsYouKey
 import org.connectbot.ui.screens.console.HerdrSwipeIntro
 import org.connectbot.ui.theme.ConnectBotTheme
 import org.connectbot.usage.UsageActions
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -253,9 +260,10 @@ class HerdScreenshotTest {
                 ),
             ),
         ) { session, pane -> since["$session/$pane"] }
+        // In the board's own dialog: edge to edge, as the app shows it.
         composeTestRule.setContent {
             ConnectBotTheme {
-                Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+                Dialog(onDismissRequest = {}, properties = BOARD_DIALOG_PROPERTIES) {
                     AgentsBoardContent(
                         cards = cards,
                         loading = false,
@@ -264,6 +272,7 @@ class HerdScreenshotTest {
                         onChat = {},
                         onJump = {},
                         onAnswer = { _, _ -> },
+                        onReply = { _, _ -> },
                         readScreen = { "Run the migration on staging?\n> 1. Yes\n  2. No\n\nOpus  ~/src/api  main  ctx 68% (137k/200k)" },
                         onRefresh = {},
                         onClose = {},
@@ -271,10 +280,27 @@ class HerdScreenshotTest {
                 }
             }
         }
+        composeTestRule.waitForIdle()
+        val bars = checkNotNull(ViewCompat.getRootWindowInsets(composeTestRule.activity.window.decorView))
+        val statusBar = bars.getInsets(WindowInsetsCompat.Type.statusBars()).top
+        val navigationBarTop = composeTestRule.activity.window.decorView.height - bars.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+        assertTrue("status bar $statusBar px", statusBar > 0)
 
+        val header = composeTestRule.onNodeWithText("Needs you · 2", substring = true).fetchSemanticsNode().positionOnScreen.y
+        assertTrue("first header top $header px is under the status bar ($statusBar px)", header >= statusBar)
+        composeTestRule.onAllNodesWithText("Run the migration on staging?")[0].assertExists()
         screencap("herd-board")
-        composeTestRule.onAllNodesWithContentDescription("Show screen")[0].performClick()
-        screencap("herd-board-open")
+
+        composeTestRule.onNode(hasScrollAction()).performScrollToNode(hasText("Theme pass"))
+        composeTestRule.waitForIdle()
+        val last = composeTestRule.onAllNodesWithTag(BOARD_CARD_TAG).fetchSemanticsNodes().maxBy { it.positionOnScreen.y }
+        val lastBottom = last.positionOnScreen.y + last.size.height
+        assertTrue("last card bottom $lastBottom px is under the navigation bar ($navigationBarTop px)", lastBottom <= navigationBarTop)
+        screencap("herd-board-end")
+
+        composeTestRule.onNode(hasScrollAction()).performScrollToNode(hasText("Migrate the billing table"))
+        composeTestRule.onAllNodesWithTag(BOARD_REPLY_TAG)[0].performTextInput("2")
+        screencap("herd-board-reply")
     }
 
     @Test

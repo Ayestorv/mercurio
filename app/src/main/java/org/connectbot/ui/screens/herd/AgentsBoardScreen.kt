@@ -25,14 +25,18 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ExpandLess
@@ -43,6 +47,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -56,9 +62,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -76,6 +85,7 @@ import org.connectbot.ui.components.OrmusKey
 import org.connectbot.ui.components.StatusDot
 import org.connectbot.ui.components.WORD_KEY_PADDING
 import org.connectbot.ui.screens.chat.AgentChat
+import org.connectbot.ui.screens.chat.ChatAsk
 import org.connectbot.ui.theme.Ormus
 import org.connectbot.ui.theme.OrmusCornerShape
 import org.connectbot.ui.theme.OrmusMono
@@ -99,6 +109,12 @@ const val BOARD_CARD_TAG = "board_card"
 /** Test tag on every section header. */
 const val BOARD_HEADER_TAG = "board_header"
 
+/** Test tag on a waiting agent's reply box. */
+const val BOARD_REPLY_TAG = "board_reply"
+
+/** Full screen, drawn edge to edge: [AgentsBoardContent] keeps its own parts clear of the bars. */
+internal val BOARD_DIALOG_PROPERTIES = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+
 /** The board lays its sections side by side from this width (a tablet, an open foldable). */
 private val BOARD_COLUMNS_MIN_WIDTH = 720.dp
 
@@ -116,8 +132,8 @@ private const val SCREEN_LINES = 8
  * in Needs you, Working, Done and Idle. Live from the snapshots the Herdr side already
  * polls (the default session and the attached one); the other sessions are read as it
  * opens and every few polls while it shows. A tap opens the agent's chat ([onChat]), or
- * jumps to it when it has none ([onJump], also a long press); Approve and Deny answer a
- * waiting agent in its own session.
+ * jumps to it when it has none ([onJump], also a long press); Approve, Deny and the reply
+ * box answer a waiting agent in its own session.
  */
 @Composable
 fun AgentsBoardDialog(
@@ -151,7 +167,7 @@ fun AgentsBoardDialog(
     var answer by remember { mutableStateOf<HerdAnswerOutcome?>(null) }
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        properties = BOARD_DIALOG_PROPERTIES,
     ) {
         AgentsBoardContent(
             cards = AgentsBoard.cards(snapshots, session.since::of),
@@ -163,11 +179,15 @@ fun AgentsBoardDialog(
             onAnswer = { card, reply ->
                 scope.launch { answer = session.answer(card.paneId, reply, card.session).takeIf { it !is HerdAnswerOutcome.Sent } }
             },
+            onReply = { card, text ->
+                scope.launch {
+                    answer = session.reply(card.paneId, card.session, AgentChat.sendCommand(card.paneId, text, card.session)).takeIf { it !is HerdAnswerOutcome.Sent }
+                }
+            },
             readScreen = { card -> session.readPane(card.paneId, card.session) },
             onRefresh = { scope.launch { session.refreshAll() } },
             onClose = onDismiss,
             answer = answer,
-            modifier = Modifier.safeDrawingPadding(),
         )
     }
 }
@@ -184,12 +204,15 @@ fun AgentsBoardContent(
     onChat: (BoardCard) -> Unit,
     onJump: (BoardCard) -> Unit,
     onAnswer: (BoardCard, HerdAnswer) -> Unit,
+    onReply: (BoardCard, String) -> Unit,
     readScreen: suspend (BoardCard) -> String?,
     onRefresh: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    /** The last Approve or Deny that did not reach a waiting agent. */
+    /** The last Approve, Deny or reply that did not reach a waiting agent. */
     answer: HerdAnswerOutcome? = null,
+    /** The bars and keyboard to keep clear of: the dialog draws edge to edge, under the status bar. */
+    windowInsets: WindowInsets = WindowInsets.safeDrawing,
 ) {
     val usage = LocalUsageLog.current
     val sections = AgentsBoard.sections(cards)
@@ -220,10 +243,18 @@ fun AgentsBoardContent(
             usage.log(if (reply == HerdAnswer.APPROVE) UsageActions.BOARD_APPROVE else UsageActions.BOARD_DENY)
             onAnswer(card, reply)
         },
+        reply = { card, text ->
+            usage.log(UsageActions.BOARD_REPLY)
+            onReply(card, text)
+        },
         readScreen = readScreen,
     )
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(windowInsets),
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -287,7 +318,7 @@ fun AgentsBoardContent(
     }
 }
 
-/** What a card does on a tap, a long press, its fold key and its answer keys. */
+/** What a card does on a tap, a long press, its fold key, its answer keys and its reply box. */
 private class CardActions(
     val now: Long,
     val isOpen: (BoardCard) -> Boolean,
@@ -295,6 +326,7 @@ private class CardActions(
     val tap: (BoardCard) -> Unit,
     val longPress: (BoardCard) -> Unit,
     val answer: (BoardCard, HerdAnswer) -> Unit,
+    val reply: (BoardCard, String) -> Unit,
     val readScreen: suspend (BoardCard) -> String?,
 )
 
@@ -355,8 +387,9 @@ private fun EmptyLine(column: BoardColumn) {
 
 /**
  * One agent: its kind and how long it has been in this state, its task (the terminal
- * title), where it lives; Approve and Deny when it waits on a prompt they answer. The fold
- * key reads its screen once, for the screen's last lines and the context use.
+ * title), where it lives. A waiting agent's card reads its screen for the ask and offers
+ * Approve and Deny (when they answer its prompt) and a reply box. The fold key reads the
+ * screen once, for the screen's last lines and the context use.
  */
 @Composable
 private fun AgentCard(card: BoardCard, actions: CardActions) {
@@ -421,7 +454,10 @@ private fun AgentCard(card: BoardCard, actions: CardActions) {
                 ).joinToString(" · "),
                 modifier = Modifier.padding(top = 4.dp, end = 8.dp),
             )
-            if (isOpen) Screen(card, actions.readScreen)
+            val blocked = card.state == HerdrAgentStatus.BLOCKED
+            val screen = paneScreen(card, actions.readScreen, wanted = blocked || isOpen)
+            if (blocked) Ask(screen)
+            if (isOpen) Screen(screen, saysReading = !blocked)
             if (card.answerable) {
                 Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OrmusKey(
@@ -437,29 +473,55 @@ private fun AgentCard(card: BoardCard, actions: CardActions) {
                     )
                 }
             }
+            if (blocked) ReplyBox(card, actions.reply)
+        }
+    }
+}
+
+/** A card's read of its pane's screen: [read] once it came back, [text] null when it failed. */
+private class PaneScreen(val read: Boolean, val text: String?)
+
+/** [card]'s screen while [wanted]: one read when it is wanted and when the agent changes state, never on a timer. */
+@Composable
+private fun paneScreen(card: BoardCard, readScreen: suspend (BoardCard) -> String?, wanted: Boolean): PaneScreen {
+    var screen by remember { mutableStateOf(PaneScreen(read = false, text = null)) }
+    val reader by rememberUpdatedState(readScreen)
+    LaunchedEffect(card.session, card.paneId, card.state, wanted) {
+        if (wanted) screen = PaneScreen(read = true, text = reader(card))
+    }
+    return screen
+}
+
+/** A waiting agent's ask, found on its screen the way the chat finds it: the question, then its options. */
+@Composable
+private fun Ask(screen: PaneScreen) {
+    val ask = screen.text?.let(ChatAsk::onScreen)
+    Column(modifier = Modifier.padding(top = 6.dp, end = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        when {
+            !screen.read -> MonoLabel(stringResource(R.string.board_reading))
+
+            screen.text == null -> MonoLabel(stringResource(R.string.board_read_failed))
+
+            ask != null -> {
+                if (ask.question.isNotEmpty()) Text(ask.question, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                ask.options.forEach { option -> Text(option, fontFamily = OrmusMono, style = MaterialTheme.typography.bodySmall) }
+            }
         }
     }
 }
 
 /**
- * An open card's screen: one read when it opens and when the agent changes state, never on
- * a timer; the context use a Claude Code status line shows, then the screen's last lines.
+ * An open card's screen: the context use a Claude Code status line shows, then the screen's
+ * last lines. [saysReading] when no ask above it already says the read is under way or failed.
  */
 @Composable
-private fun Screen(card: BoardCard, readScreen: suspend (BoardCard) -> String?) {
-    var screen by remember { mutableStateOf<String?>(null) }
-    var read by remember { mutableStateOf(false) }
-    val reader by rememberUpdatedState(readScreen)
-    LaunchedEffect(card.session, card.paneId, card.state) {
-        screen = reader(card)
-        read = true
-    }
-    val text = screen
+private fun Screen(screen: PaneScreen, saysReading: Boolean) {
+    val text = screen.text
     Column(modifier = Modifier.padding(top = 6.dp, end = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         when {
-            !read -> MonoLabel(stringResource(R.string.board_reading))
+            !screen.read -> if (saysReading) MonoLabel(stringResource(R.string.board_reading))
 
-            text == null -> MonoLabel(stringResource(R.string.board_read_failed))
+            text == null -> if (saysReading) MonoLabel(stringResource(R.string.board_read_failed))
 
             else -> {
                 AgentsBoard.contextUse(text)?.let { use ->
@@ -480,6 +542,48 @@ private fun Screen(card: BoardCard, readScreen: suspend (BoardCard) -> String?) 
                 }
             }
         }
+    }
+}
+
+/** A waiting agent's reply box: what you type goes into its pane, in its session, then Enter. */
+@Composable
+private fun ReplyBox(card: BoardCard, onReply: (BoardCard, String) -> Unit) {
+    var text by rememberSaveable(card.session, card.paneId) { mutableStateOf("") }
+    fun send() {
+        if (text.isBlank()) return
+        onReply(card, text)
+        text = ""
+    }
+    Row(
+        modifier = Modifier.padding(top = 8.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TextField(
+            value = text,
+            onValueChange = { text = it },
+            placeholder = { Text(stringResource(R.string.chat_reply_hint, card.agent ?: stringResource(R.string.board_agent)), maxLines = 1) },
+            maxLines = 3,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { send() }),
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                cursorColor = MaterialTheme.colorScheme.primary,
+            ),
+            shape = OrmusCornerShape,
+            modifier = Modifier
+                .weight(1f)
+                .testTag(BOARD_REPLY_TAG),
+        )
+        OrmusKey(
+            label = stringResource(R.string.chat_send),
+            onClick = { send() },
+            enabled = text.isNotBlank(),
+            contentPadding = WORD_KEY_PADDING,
+        )
     }
 }
 

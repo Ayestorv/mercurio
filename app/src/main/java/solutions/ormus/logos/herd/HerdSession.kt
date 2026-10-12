@@ -372,6 +372,21 @@ class HerdSession(
         HerdAnswerOutcome.Sent
     }
 
+    /**
+     * Reply to the agent waiting in [session]'s [paneId] from its board card: read a fresh
+     * snapshot of that session and run [command], the reply typed into that pane, only if
+     * the pane still holds a blocked agent.
+     */
+    suspend fun reply(paneId: String, session: String, command: String): HerdAnswerOutcome = withContext(io) {
+        val snapshot = stdoutOrNull(HerdrSessions.snapshotCommand(session))?.let { parseHerdrSnapshot(it) }
+            ?: return@withContext HerdAnswerOutcome.Failed(FixPrompt.herdrReason(_failure.value))
+        keep(session, snapshot)
+        if (snapshot.agents.none { it.paneId == paneId && it.agentStatus == HerdrAgentStatus.BLOCKED }) return@withContext HerdAnswerOutcome.NotBlocked
+        val error = HerdrApi.parseCommandError(run(command))
+        if (error != null) return@withContext HerdAnswerOutcome.Failed(oneLine(error.message.ifBlank { error.code }))
+        HerdAnswerOutcome.Sent
+    }
+
     private fun stdoutOrNull(command: String): String? = run(command)?.takeIf { it.exitCode == null || it.exitCode == 0 }?.stdout
 
     private fun run(command: String): CommandOutput? {

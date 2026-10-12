@@ -68,6 +68,9 @@ sealed interface ChatAsk {
             }
         }
 
+        /** The prompt on a blocked pane's [screen], read the same way as the chat's: its question and options. */
+        fun onScreen(screen: String): Blocked? = prompt(lines(screen))
+
         private fun blocked(items: List<ChatItem>, screen: String?): Blocked {
             val last = items.indices.lastOrNull()
             val pending = last?.takeIf { items[it].isTool && items[it].state == "run" }

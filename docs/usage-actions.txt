@@ -182,6 +182,7 @@ board:jump
 board:more
 board:approve
 board:deny
+board:reply
 board:refresh
 board:close
 herdr-sheet:key-menu

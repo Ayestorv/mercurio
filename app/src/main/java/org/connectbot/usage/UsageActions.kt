@@ -250,13 +250,14 @@ object UsageActions {
     const val NEEDS_YOU_BOARD = "needs-you:board"
 
     // Agents board: opened from the Herdr panel; a card tapped (chat, or jump for an agent
-    // without one), long-pressed (jump), opened to its screen, answered; refreshed, closed.
+    // without one), long-pressed (jump), opened to its screen, answered, replied to; refreshed, closed.
     const val BOARD_OPEN = "board:open"
     const val BOARD_CHAT = "board:chat"
     const val BOARD_JUMP = "board:jump"
     const val BOARD_MORE = "board:more"
     const val BOARD_APPROVE = "board:approve"
     const val BOARD_DENY = "board:deny"
+    const val BOARD_REPLY = "board:reply"
     const val BOARD_REFRESH = "board:refresh"
     const val BOARD_CLOSE = "board:close"
 
@@ -381,7 +382,7 @@ object UsageActions {
         HERDR_SHEET_SIDEBAR, HERDR_SHEET_NAVIGATE_WORKSPACES, HERDR_SHEET_FIX_PROMPT, HERDR_SHEET_RETRY,
         HERDR_SHEET_TAB_KEY, HERDR_SHEET_SESSION,
         HERDR_JUMP_OPEN, HERDR_JUMP_PICK, NEEDS_YOU_JUMP, NEEDS_YOU_BOARD, HERDR_SWIPE_INTRO_DISMISS,
-        BOARD_OPEN, BOARD_CHAT, BOARD_JUMP, BOARD_MORE, BOARD_APPROVE, BOARD_DENY, BOARD_REFRESH, BOARD_CLOSE,
+        BOARD_OPEN, BOARD_CHAT, BOARD_JUMP, BOARD_MORE, BOARD_APPROVE, BOARD_DENY, BOARD_REPLY, BOARD_REFRESH, BOARD_CLOSE,
         HERDR_SHEET_KEY_MENU, HERDR_SHEET_KEY_HIDE, HERDR_SHEET_KEY_EDIT, HERDR_SHEET_KEY_ADD,
         HERDR_SHEET_KEY_REMOVE, HERDR_SHEET_RESTORE,
         HERDR_PICKER_SHOW, HERDR_PICKER_PICK, HERDR_PICKER_ATTACH, HERDR_PICKER_DISMISS,
