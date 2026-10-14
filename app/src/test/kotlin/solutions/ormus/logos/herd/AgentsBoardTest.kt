@@ -146,6 +146,13 @@ class AgentsBoardTest {
     }
 
     @Test
+    fun cards_carryHerdrsStateChangeSeq() {
+        val seen = boardAgent("w1:p1", "w1:t1", "claude", HerdrAgentStatus.BLOCKED).copy(stateChangeSeq = 42)
+        val card = AgentsBoard.cards(mapOf("default" to boardSnapshot(listOf("w1" to "alpha"), listOf("w1:t1" to "build"), listOf(seen)))).single()
+        assertEquals(42L, card.seq)
+    }
+
+    @Test
     fun jumpTarget_carriesTheSessionTabAndPlace() {
         val target = cards.first { it.session == "work" && it.paneId == "w1:p1" }.jumpTarget()
         assertEquals("work", target.session)

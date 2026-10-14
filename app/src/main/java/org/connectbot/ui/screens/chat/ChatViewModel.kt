@@ -97,8 +97,8 @@ interface ChatHost {
     /** The last lines on [paneId]'s screen. Blocking; null when the read failed. */
     fun screen(paneId: String): String? = null
 
-    /** Approve or deny the blocked agent in [paneId]. */
-    suspend fun answer(paneId: String, answer: HerdAnswer): HerdAnswerOutcome
+    /** Answer the blocked agent in [paneId] with [keys]: Approve's or Deny's key, or a picked option's number. */
+    suspend fun answer(paneId: String, keys: String): HerdAnswerOutcome
 
     /** The Herdr session the chat's pane is in; [snapshot] and [answer] are that session's. */
     val session: String get() = HerdrCommands.DEFAULT_SESSION
@@ -184,10 +184,13 @@ class ChatViewModel @Inject constructor(
     }
 
     /** Approve or deny the waiting agent, then read again. */
-    fun answer(host: ChatHost, answer: HerdAnswer) {
+    fun answer(host: ChatHost, answer: HerdAnswer) = answer(host, answer.key)
+
+    /** Answer the waiting agent with [keys] (Approve's, Deny's, or a picked option's), then read again. */
+    fun answer(host: ChatHost, keys: String) {
         val paneId = _uiState.value.target?.paneId ?: return
         viewModelScope.launch {
-            val outcome = host.answer(paneId, answer)
+            val outcome = host.answer(paneId, keys)
             _uiState.update { it.copy(answer = outcome.takeIf { o -> o !is HerdAnswerOutcome.Sent }) }
             wake.trySend(Unit)
         }
@@ -278,5 +281,5 @@ class BridgeChatHost(private val bridge: TerminalBridge, override val session: S
 
     override fun screen(paneId: String): String? = exec(AgentsBoard.readCommand(session, paneId))?.takeIf { it.exitCode == null || it.exitCode == 0 }?.stdout
 
-    override suspend fun answer(paneId: String, answer: HerdAnswer): HerdAnswerOutcome = bridge.herd?.answer(paneId, answer, session) ?: HerdAnswerOutcome.Failed("Herdr is not up in this session")
+    override suspend fun answer(paneId: String, keys: String): HerdAnswerOutcome = bridge.herd?.answer(paneId, keys, session) ?: HerdAnswerOutcome.Failed("Herdr is not up in this session")
 }

@@ -29,7 +29,7 @@ enum class HerdrSwipe { PREV_TAB, NEXT_TAB, PANE_LEFT, PANE_RIGHT, PREV_WORKSPAC
  * moves between tabs, two fingers across move pane focus, two fingers up or down move
  * between workspaces, and so does a fast one-finger flick up or down. Left and up go to
  * the next one, the way a page turns. A one-finger drag up or down that is not fast stays
- * the terminal's scroll, and a pinch stays its zoom.
+ * the terminal's scroll ([dragScrolls]), and a pinch stays its zoom.
  *
  * Distances are in dp, velocities in dp per second; y grows downward.
  */
@@ -67,6 +67,12 @@ object HerdrSwipes {
         if (pointers == 1 && !horizontal && vy * sign(dy) < FLICK_DP_PER_S) return Claim.RELEASE // scroll
         return Claim.CLAIM
     }
+
+    /**
+     * Whether a touch [claim] let go is a one-finger drag up or down: the terminal's scroll,
+     * which goes to Herdr as mouse wheel notches when it asked for the mouse.
+     */
+    fun dragScrolls(pointers: Int, dx: Float, dy: Float): Boolean = pointers == 1 && horizontal(dx, dy) == false
 
     /**
      * The swipe a claimed touch makes once it lifts, from its travel and velocity; null when

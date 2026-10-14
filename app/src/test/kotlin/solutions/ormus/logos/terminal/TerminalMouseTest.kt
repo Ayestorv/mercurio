@@ -140,6 +140,30 @@ class TerminalMouseTest {
     }
 
     @Test
+    fun wheel_isButton64Up_65Down_aPressOnly_inTheAskedEncoding() {
+        assertEquals("$esc[<64;5;3M", mouse("$esc[?1000;1006h").wheel(5, 3, up = true).text())
+        assertEquals("$esc[<65;5;3M", mouse("$esc[?1002h$esc[?1006h").wheel(5, 3, up = false).text())
+        assertEquals("$esc[96;5;3M", mouse("$esc[?1000;1015h").wheel(5, 3, up = true).text())
+        assertEquals("$esc[Ma%#", mouse("$esc[?1000h").wheel(5, 3, up = false).text())
+        assertNull(mouse().wheel(5, 3, up = true))
+        assertNull(mouse("$esc[?1000h").wheel(224, 3, up = true))
+    }
+
+    @Test
+    fun arrows_followApplicationCursorKeys_throughTheAlternateScreen_untilAReset() {
+        assertEquals("$esc[B", mouse().arrow(TerminalArrow.DOWN).text())
+        assertEquals("$esc[A$esc[B$esc[C$esc[D", TerminalArrow.entries.joinToString("") { mouse().arrow(it).text()!! })
+        val keys = mouse("$esc[?1h")
+        assertEquals("${esc}OB", keys.arrow(TerminalArrow.DOWN).text())
+        assertFalse("not a mouse mode", keys.active)
+        keys.scan("$esc[?1049h$esc[?1049l")
+        assertEquals("${esc}OC", keys.arrow(TerminalArrow.RIGHT).text())
+        keys.scan("$esc[?1l")
+        assertEquals("$esc[C", keys.arrow(TerminalArrow.RIGHT).text())
+        assertEquals("$esc[D", mouse("$esc[?1h", "${esc}c").arrow(TerminalArrow.LEFT).text())
+    }
+
+    @Test
     fun cell_mapsPixelsToOneBasedCells_likeTermlib() {
         // 10 x 20 px cells on an 80 x 24 terminal.
         assertEquals(1 to 1, TerminalMouse.cell(0f, 0f, 10f, 20f, 80, 24))

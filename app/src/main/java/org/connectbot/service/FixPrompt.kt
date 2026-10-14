@@ -17,6 +17,7 @@
 
 package org.connectbot.service
 
+import org.connectbot.data.TailscaleRepository
 import solutions.ormus.logos.herd.HerdrFailure
 
 /**
@@ -100,8 +101,13 @@ object FixPrompt {
     fun machines(source: String?, appVersion: String, error: String): String = prompt(
         title = "Mercurio can't load my Tailscale machine list, and I need you to fix it.",
         what = buildString {
-            append("Mercurio ").append(appVersion).append(" reads the list by running ")
-            append("`tailscale status --json` over SSH on ").append(source ?: "a connected host")
+            append("Mercurio ").append(appVersion)
+            if (source == TailscaleRepository.API_SOURCE) {
+                append(" reads the list from Tailscale's API (").append(source).append(") with a saved OAuth client secret")
+            } else {
+                append(" reads the list by running ")
+                append("`tailscale status --json` over SSH on ").append(source ?: "a connected host")
+            }
             append(". It failed.")
         },
         evidence = "### Error\n```\n" + DiagnosticsReport.redact(error).take(OUTPUT_MAX_CHARS) + "\n```\n",

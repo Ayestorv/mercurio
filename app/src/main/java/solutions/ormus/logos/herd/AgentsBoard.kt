@@ -36,11 +36,19 @@ data class BoardCard(
     val workspaceNumber: Int,
     /** When Mercurio saw the agent enter [state] (see [AgentSince]); null when it cannot tell. */
     val since: Long? = null,
+    /** Herdr's `state_change_seq` for the agent: an answer goes out only while it holds. */
+    val seq: Long = 0,
 ) {
     val column: BoardColumn get() = AgentsBoard.column(state)
 
     /** Approve and Deny reach this agent: blocked, of a kind whose prompt Enter and Esc answer. */
     val answerable: Boolean get() = state == HerdrAgentStatus.BLOCKED && agent in HerdApproval.PROVEN_KINDS
+
+    /** The prompt Approve and Deny answer on [screen], this card's pane read; null when they answer none there. */
+    fun approval(screen: String?): ApprovalPrompt? = screen?.takeIf { answerable }?.let(HerdApproval::classify)
+
+    /** Where the board keeps what came of this card's answer. */
+    val key: String get() = "$session/$paneId"
 
     /** The card as a Jump to target, so a long press takes the same path as the Jump to list. */
     fun jumpTarget(): JumpTarget = JumpTarget(
@@ -94,6 +102,7 @@ object AgentsBoard {
                 workspaceLabel = workspace?.label.orEmpty(),
                 workspaceNumber = workspace?.number ?: 0,
                 since = since(session, agent.paneId),
+                seq = agent.stateChangeSeq,
             )
         }
     }.sortedWith(ORDER)

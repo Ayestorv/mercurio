@@ -31,6 +31,7 @@ object UsageSummary {
         UsageActions.SESSION_END,
         UsageActions.SESSION_FAIL,
         UsageActions.SESSION_RECONNECT,
+        UsageActions.SESSION_AUTO_RECONNECT,
         UsageActions.UPLOAD_REFUSED_HOSTKEY,
         UsageActions.KEY_OTHER,
     )

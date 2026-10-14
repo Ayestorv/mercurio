@@ -18,7 +18,9 @@
 package solutions.ormus.logos.herd
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import solutions.ormus.logos.herd.HerdrSwipes.Claim
 
@@ -137,5 +139,14 @@ class HerdrSwipesTest {
         assertNull(HerdrSwipes.action(HerdrSwipe.NEXT_WORKSPACE, snapshot.copy(focusedWorkspaceId = null)))
         val alone = snapshot.copy(workspaces = snapshot.workspaces.filter { it.workspaceId == "w1" })
         assertNull(HerdrSwipes.action(HerdrSwipe.PREV_WORKSPACE, alone))
+    }
+
+    @Test
+    fun dragScrolls_isOneFingerUpOrDown() {
+        assertTrue(HerdrSwipes.dragScrolls(1, 4f, -30f))
+        assertTrue(HerdrSwipes.dragScrolls(1, 0f, 40f))
+        assertFalse("across", HerdrSwipes.dragScrolls(1, -30f, 4f))
+        assertFalse("diagonal", HerdrSwipes.dragScrolls(1, 25f, 20f))
+        assertFalse("two fingers", HerdrSwipes.dragScrolls(2, 0f, -30f))
     }
 }

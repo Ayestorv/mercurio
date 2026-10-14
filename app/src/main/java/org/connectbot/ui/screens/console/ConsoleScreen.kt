@@ -102,6 +102,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -554,6 +555,20 @@ fun ConsoleScreen(
     val disconnected = currentBridge?.isDisconnected == true
     val connecting = currentBridge?.isConnecting == true
     val canForwardPorts = currentBridge?.canFowardPorts() == true
+    // A pull down on the title bar: past one mark the session drawer, past two the
+    // disconnect confirmation (no session, the drawer).
+    val hasBridge by rememberUpdatedState(currentBridge != null)
+    val titlePull = remember {
+        TitlePull { level ->
+            if (level == TitlePullLevel.DISCONNECT && hasBridge) {
+                usage.log(UsageActions.TITLE_PULL_DISCONNECT)
+                showDisconnectDialog = true
+            } else if (level != TitlePullLevel.NONE) {
+                usage.log(UsageActions.TITLE_PULL_DRAWER)
+                coroutineScope.launch { drawerState.open() }
+            }
+        }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
 
     val isConnectionActive = currentBridge != null && !disconnected
@@ -963,6 +978,29 @@ fun ConsoleScreen(
                             val taps = remember { TerminalTaps() }
                             val cellSize = rememberCellSize(fontResult.typeface, fontSize)
 
+                            // A slow one-finger drag scrolls a program that asked for the mouse (a Herdr pane) by wheel notches.
+                            val wheelCell by rememberUpdatedState(cellSize)
+                            val wheel = remember {
+                                TerminalWheel(
+                                    bridge = { swipeBridge },
+                                    cell = { if (forceSize == null) wheelCell else Size.Zero },
+                                    onDrag = { usage.log(UsageActions.HERDR_DRAG_SCROLL) },
+                                )
+                            }
+
+                            // A long press held still, then dragged, sends arrow keys, in every session.
+                            val arrows = remember {
+                                DragArrows(
+                                    bridge = { swipeBridge },
+                                    cell = { if (forceSize == null) wheelCell else Size.Zero },
+                                    enabled = { selectionController?.isSelectionActive != true },
+                                    onStart = {
+                                        selectionController?.clearSelection()
+                                        usage.log(UsageActions.GESTURE_DRAG_ARROW)
+                                    },
+                                )
+                            }
+
                             Terminal(
                                 terminalEmulator = bridge.terminalEmulator,
                                 modifier = Modifier
@@ -972,6 +1010,7 @@ fun ConsoleScreen(
                                     )
                                     .herdrSwipes(
                                         enabled = { swipeBridge.runsHerdr && selectionController?.isSelectionActive != true },
+                                        wheel = wheel,
                                     ) { swipe, fingers ->
                                         haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
                                         usage.log(usageIdFor(swipe, fingers, usesSwitcher(swipeBridge, swipe)))
@@ -980,6 +1019,7 @@ fun ConsoleScreen(
                                         swipesFired++
                                         putSwipeIntroAway()
                                     }
+                                    .dragArrows(arrows)
                                     .terminalTaps(taps)
                                     .testTag("terminal"),
                                 typeface = fontResult.typeface,
@@ -1126,6 +1166,7 @@ fun ConsoleScreen(
                                             herdrPanelBridge = null
                                             boardBridge = bridge
                                         },
+                                        boardOpen = boardBridge != null,
                                         // Herdr key once the session's Herdr side is up.
                                         herdrPanelOpen = herdrPanelBridge === bridge,
                                         onHerdrPanelChange = bridge.herd?.let {
@@ -1387,6 +1428,7 @@ fun ConsoleScreen(
                     },
                     modifier = Modifier
                         .testTag("top_app_bar")
+                        .titlePull(titlePull)
                         .onSizeChanged {
                             titleBarHeight = with(density) { it.height.toDp() }
                         },
@@ -1646,6 +1688,8 @@ fun ConsoleScreen(
                         }
                     },
                 )
+
+                TitlePullMark(titlePull, Modifier.padding(top = titleBarHeight))
 
                 // Progress indicator for OSC 9;4 progress reporting
                 val progressState = uiState.progressState

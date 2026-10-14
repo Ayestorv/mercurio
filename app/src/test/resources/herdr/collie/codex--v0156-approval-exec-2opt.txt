@@ -1,0 +1,22 @@
+  exact heredoc command.
+
+• Running cat <<'EOF' > multi.txt
+  │ line one
+  │ line two
+  │ … +1 line
+
+  Would you like to run the following command?
+
+  Environment: local
+
+  Reason: May I write `multi.txt` by running the exact heredoc command you provided?
+
+  $ cat <<'EOF' > multi.txt
+  line one
+  line two
+  EOF
+
+› 1. Yes, proceed (y)
+  2. No, and tell Codex what to do differently (esc)
+
+  Press enter to confirm or esc to cancel

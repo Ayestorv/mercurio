@@ -167,6 +167,42 @@ object TailscaleStatus {
                 lastSeen = peer.optString("LastSeen").takeIf { it.isNotBlank() && !it.startsWith(ZERO_TIME_PREFIX) },
             )
         }
+        return ordered(devices)
+    }
+
+    /**
+     * Returns the devices worth showing from Tailscale's API device list
+     * (`GET /api/v2/tailnet/-/devices`): tagged devices plus the tailnet's own
+     * devices, hiding devices other owners share in from their tailnets
+     * (`isExternal`). Same order as [parse].
+     *
+     * @throws org.json.JSONException when [json] is not a device list.
+     */
+    fun parseApiDevices(json: String): List<TailscaleDevice> {
+        val list = JSONObject(json).getJSONArray("devices")
+        val devices = mutableListOf<TailscaleDevice>()
+        for (i in 0 until list.length()) {
+            val device = list.optJSONObject(i) ?: continue
+            val tagged = (device.optJSONArray("tags")?.length() ?: 0) > 0
+            if (!tagged && device.optBoolean("isExternal", false)) continue
+            val dnsName = device.optString("name").removeSuffix(".")
+            if (dnsName.endsWith(MULLVAD_SUFFIX, ignoreCase = true)) continue
+            val addresses = device.optJSONArray("addresses")
+            devices += TailscaleDevice(
+                hostName = device.optString("hostname"),
+                dnsName = dnsName,
+                ipv4 = addresses?.let { arr -> (0 until arr.length()).map { arr.optString(it) } }
+                    .orEmpty()
+                    .firstOrNull { it.isNotBlank() && !it.contains(':') },
+                online = device.optBoolean("connectedToControl", false),
+                os = device.optString("os"),
+                lastSeen = device.optString("lastSeen").takeIf { it.isNotBlank() && !it.startsWith(ZERO_TIME_PREFIX) },
+            )
+        }
+        return ordered(devices)
+    }
+
+    private fun ordered(devices: List<TailscaleDevice>): List<TailscaleDevice> {
         val byName = compareBy(String.CASE_INSENSITIVE_ORDER) { d: TailscaleDevice -> d.shortName }
         val (phones, computers) = devices.partition { it.isPhone }
         val (online, offline) = computers.partition { it.online }

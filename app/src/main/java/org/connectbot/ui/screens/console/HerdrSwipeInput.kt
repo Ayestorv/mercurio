@@ -81,9 +81,11 @@ private const val PROBLEM_HINT_MS = 3_000L
  * scrolls that are not a fast flick, and pinches are never claimed and reach termlib
  * untouched. [enabled] is read as each touch starts and while it waits: false off Herdr,
  * and while a selection is up so its handles and drags stay termlib's. [onSwipe] gets the
- * swipe and how many fingers made it.
+ * swipe and how many fingers made it. With a [wheel] whose program asked for the mouse, a
+ * one-finger scroll is taken too and goes to it as wheel notches, one per row crossed: a
+ * finger moving down scrolls up, as termlib's own scroll does.
  */
-internal fun Modifier.herdrSwipes(enabled: () -> Boolean, onSwipe: (HerdrSwipe, Int) -> Unit): Modifier = pointerInput(Unit) {
+internal fun Modifier.herdrSwipes(enabled: () -> Boolean, wheel: TerminalWheel? = null, onSwipe: (HerdrSwipe, Int) -> Unit): Modifier = pointerInput(Unit) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
         if (!enabled()) return@awaitEachGesture
@@ -96,12 +98,26 @@ internal fun Modifier.herdrSwipes(enabled: () -> Boolean, onSwipe: (HerdrSwipe, 
         var claimed = false
         var across: Boolean? = null
         var travel = Offset.Zero
+        var slopped = false
+        // While a drag scrolls: the row height in px, and the rows sent so far (down positive).
+        var wheelRow: Float? = null
+        var notches = 0
+        var fingerAt = down.position
+        fun scroll(rowPx: Float) {
+            val rows = ((fingerAt.y - down.position.y) / rowPx).toInt()
+            while (notches != rows) {
+                val up = rows > notches
+                wheel?.notch(down.position, up)
+                notches += if (up) 1 else -1
+            }
+        }
         while (true) {
             val event = awaitPointerEvent(PointerEventPass.Initial)
             event.changes.firstOrNull { it.id == down.id }?.let {
                 velocity.addPointerInputChange(it)
                 if (it.pressed) samples++
                 lastAt = it.uptimeMillis
+                fingerAt = it.position
             }
             val pressed = event.changes.filter { it.pressed }
             if (pressed.isEmpty()) break
@@ -112,7 +128,15 @@ internal fun Modifier.herdrSwipes(enabled: () -> Boolean, onSwipe: (HerdrSwipe, 
                 event.changes.forEach { it.consume() }
                 continue
             }
+            wheelRow?.let {
+                event.changes.forEach { it.consume() }
+                scroll(it)
+                continue
+            }
             pointers = maxOf(pointers, pressed.size)
+            // One finger held still past the long-press timeout: termlib's selection, or arrows once it drags (dragArrows).
+            if (pointers == 1 && !slopped && lastAt - down.uptimeMillis >= viewConfiguration.longPressTimeoutMillis) return@awaitEachGesture
+            if (travel.getDistance() > viewConfiguration.touchSlop) slopped = true
             val spanChange = if (pressed.size == 2) {
                 val span = span(pressed)
                 span - (startSpan ?: span.also { startSpan = it })
@@ -128,7 +152,14 @@ internal fun Modifier.herdrSwipes(enabled: () -> Boolean, onSwipe: (HerdrSwipe, 
                     across = HerdrSwipes.horizontal(travel.x, travel.y)
                 }
 
-                HerdrSwipes.Claim.RELEASE -> return@awaitEachGesture
+                HerdrSwipes.Claim.RELEASE -> {
+                    // A scroll taken for the wheel: like a claim, this event goes on to termlib and the ones after it do not.
+                    val scrolls = wheel?.takeIf { HerdrSwipes.dragScrolls(pointers, travel.x, travel.y) } ?: return@awaitEachGesture
+                    val rowPx = scrolls.rowHeight() ?: return@awaitEachGesture
+                    scrolls.onDrag()
+                    wheelRow = rowPx
+                    scroll(rowPx)
+                }
 
                 HerdrSwipes.Claim.WAIT -> if (!enabled()) return@awaitEachGesture // a long press began a selection
             }

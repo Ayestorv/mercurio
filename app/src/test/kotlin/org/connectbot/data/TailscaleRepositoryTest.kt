@@ -24,6 +24,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.assertj.core.api.Assertions.assertThat
 import org.connectbot.data.entity.Host
 import org.connectbot.di.CoroutineDispatchers
@@ -45,6 +47,7 @@ class TailscaleRepositoryTest {
     private lateinit var hostRepository: HostRepository
     private lateinit var prefs: SharedPreferences
     private lateinit var repository: TailscaleRepository
+    private val api = TailscaleApi(secret = { null }, hasSecret = { false }, saveSecret = {})
 
     private val sun by lazy { TailscaleStatus.parse(TailscaleStatusTest.FIXTURE).single { it.hostName == "Sun" } }
 
@@ -64,7 +67,7 @@ class TailscaleRepositoryTest {
         )
         prefs = context.getSharedPreferences("tailscale-test", Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
-        repository = TailscaleRepository(prefs, hostRepository, dispatchers)
+        repository = TailscaleRepository(prefs, hostRepository, dispatchers, api)
     }
 
     @After
@@ -122,7 +125,7 @@ class TailscaleRepositoryTest {
     fun applyStatus_isCachedForTheNextLaunch() = runTest(testDispatcher) {
         repository.applyStatus(TailscaleStatusTest.FIXTURE, sourceUsername = "alice", now = 1234L)
 
-        val relaunched = TailscaleRepository(prefs, hostRepository, dispatchers)
+        val relaunched = TailscaleRepository(prefs, hostRepository, dispatchers, api)
         relaunched.loadCache()
 
         val cached = relaunched.machines.value
@@ -140,8 +143,45 @@ class TailscaleRepositoryTest {
         }
 
         assertThat(repository.machines.value.updatedAt).isEqualTo(1234L)
-        val relaunched = TailscaleRepository(prefs, hostRepository, dispatchers)
+        val relaunched = TailscaleRepository(prefs, hostRepository, dispatchers, api)
         relaunched.loadCache()
         assertThat(relaunched.machines.value.devices).hasSize(4)
+    }
+
+    @Test
+    fun refresh_noSshSession_withSavedSecret_loadsFromTheApi() = runTest(testDispatcher) {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"access_token":"t","expires_in":3600}"""))
+            server.enqueue(MockResponse().setBody(TailscaleApiTest.FIXTURE))
+            val withSecret = TailscaleApi(
+                secret = { TailscaleApiTest.SECRET },
+                hasSecret = { true },
+                saveSecret = {},
+                baseUrl = server.url("/").toString().removeSuffix("/"),
+            )
+            val repository = TailscaleRepository(prefs, hostRepository, dispatchers, withSecret)
+
+            assertThat(repository.canRefresh(emptyList(), null)).isTrue()
+            assertThat(repository.refresh(emptyList(), null)).isTrue()
+
+            assertThat(repository.machines.value.devices.map { it.hostName }).containsExactly("foo", "foo")
+            assertThat(repository.lastError).isNull()
+            assertThat(server.requestCount).isEqualTo(2)
+            // The cached API answer is read back with the API parser on the next launch.
+            val relaunched = TailscaleRepository(prefs, hostRepository, dispatchers, api)
+            relaunched.loadCache()
+            assertThat(relaunched.machines.value.devices.map { it.hostName }).containsExactly("foo", "foo")
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun refresh_noSshSession_noSecret_reportsNoSession() = runTest(testDispatcher) {
+        assertThat(repository.canRefresh(emptyList(), null)).isFalse()
+        assertThat(repository.refresh(emptyList(), null)).isFalse()
+        assertThat(repository.lastError?.message).isEqualTo(TailscaleRepository.NO_SESSION)
     }
 }

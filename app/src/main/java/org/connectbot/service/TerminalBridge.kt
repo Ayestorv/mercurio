@@ -23,6 +23,7 @@ import android.content.Context
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.net.Network
+import android.os.SystemClock
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -75,6 +76,7 @@ import solutions.ormus.logos.herd.HerdrTermKey
 import solutions.ormus.logos.herd.HerdrWorkspacePicker
 import solutions.ormus.logos.herd.JumpTarget
 import solutions.ormus.logos.herd.WorkspacePick
+import solutions.ormus.logos.terminal.TerminalArrow
 import solutions.ormus.logos.terminal.TerminalMouse
 import timber.log.Timber
 import java.io.IOException
@@ -318,6 +320,9 @@ class TerminalBridge {
 
     private val disconnectListeners = CopyOnWriteArrayList<BridgeDisconnectedListener>()
 
+    // One reconnect with no tap after a dropped link (see AutoReconnect).
+    private val autoReconnect: AutoReconnect
+
     /**
      * Create new terminal bridge with following parameters. We will immediately
      * launch thread to start SSH connection and handle any hostkey verification
@@ -327,6 +332,13 @@ class TerminalBridge {
         this.manager = manager
         this.host = host
         this.dispatchers = dispatchers
+        autoReconnect = AutoReconnect(scope, dispatchers, SystemClock::elapsedRealtime) {
+            // A tap on Reconnect in the meantime already started one.
+            if (disconnected && !connecting) {
+                manager.logUsage(UsageActions.SESSION_AUTO_RECONNECT)
+                manager.requestReconnect(this)
+            }
+        }
 
         // Load profile for this host (always returns a profile, defaulting to Default profile)
         val profile = manager.profileRepository.getByIdOrDefaultBlocking(host.profileId)
@@ -718,6 +730,24 @@ class TerminalBridge {
         return true
     }
 
+    /** Whether the program in the terminal asked for mouse reports. */
+    val mouseReporting: Boolean
+        get() = mouse.active
+
+    /**
+     * Send one wheel notch, [up] or down, at the 1-based [col] and [row] when the program in
+     * the terminal asked for mouse reports. Returns whether one was sent.
+     */
+    fun mouseWheel(col: Int, row: Int, up: Boolean): Boolean {
+        sendBytes(mouse.wheel(col, row, up) ?: return false)
+        return true
+    }
+
+    /** Send [key] as the program in the terminal reads it: ESC O B, not ESC [ B, under application cursor keys. */
+    fun arrowKey(key: TerminalArrow) {
+        sendBytes(mouse.arrow(key))
+    }
+
     /**
      * Enqueue a flush after any pending writes. Serialized with writes so the
      * flush happens only after preceding bytes have been sent to the transport.
@@ -793,6 +823,11 @@ class TerminalBridge {
      * failed snapshot included, sends it at once as before.
      */
     private fun sendPostLogin() {
+        // An automatic reconnect attaches the Herdr session the terminal had, with no picker.
+        if (autoReconnect.reconnecting) {
+            injectString(AutoReconnect.postLogin(host.postLogin, herd?.attached?.value))
+            return
+        }
         val ssh = transport as? SSH
         if (ssh == null || !HerdrWorkspacePicker.offers(host.postLogin)) {
             injectString(host.postLogin)
@@ -893,6 +928,7 @@ class TerminalBridge {
             }
         }
         manager.onSessionClosed(this, reason)
+        if (reason == DisconnectReason.USER_REQUESTED) autoReconnect.cancel()
 
         // Cancel any pending prompts
         promptManager.cancelPrompt()
@@ -920,6 +956,13 @@ class TerminalBridge {
             }
 
             is DisconnectAction.ShowReconnectOverlay -> {
+                autoReconnect.onDrop(
+                    reason = reason,
+                    transport = transport,
+                    networkUp = manager.isNetworkUp(),
+                    onScreen = manager.isOnScreen(this),
+                    inGracePeriod = inGracePeriod,
+                )
                 manager.notifyBridgeStateChanged()
             }
         }

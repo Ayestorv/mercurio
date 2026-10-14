@@ -154,6 +154,11 @@ object HerdrWorkspacePicker {
      */
     fun postLogin(postLogin: String, pick: WorkspacePick?): String {
         val session = (pick as? WorkspacePick.Focus)?.session ?: return postLogin
+        return attachPostLogin(postLogin, session)
+    }
+
+    /** [postLogin] with its `herdr` launch attaching [session]; the default session's as it is. */
+    fun attachPostLogin(postLogin: String, session: String): String {
         if (HerdrSessions.isDefault(session)) return postLogin
         return HERDR_LAUNCH.replaceFirst(postLogin, "$0 session attach ${HerdrSessions.quoted(session)}")
     }

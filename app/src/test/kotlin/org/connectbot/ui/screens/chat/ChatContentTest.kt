@@ -81,6 +81,7 @@ class ChatContentTest {
         logged: MutableList<String> = mutableListOf(),
         sent: MutableList<String> = mutableListOf(),
         answers: MutableList<HerdAnswer> = mutableListOf(),
+        picks: MutableList<String> = mutableListOf(),
         windowInsets: WindowInsets = WindowInsets(0),
     ) {
         composeTestRule.setContent {
@@ -93,6 +94,7 @@ class ChatContentTest {
                         onRefresh = {},
                         onSend = { sent += it },
                         onAnswer = { answers += it },
+                        onPick = { picks += it },
                         onOpenReader = {},
                         windowInsets = windowInsets,
                     )
@@ -262,6 +264,33 @@ class ChatContentTest {
         val list = composeTestRule.onNodeWithTag(CHAT_LIST_TAG).getUnclippedBoundsInRoot()
         assertTrue("reply ${reply.top} under the card ${card.bottom}", reply.top >= card.bottom)
         assertTrue("reply ${reply.bottom} above the conversation ${list.top}", reply.bottom <= list.top)
+    }
+
+    // The ask in the issue, with three options.
+    private val threeOptions = "Run the migration on staging?\n❯ 1. Yes\n  2. Yes, and run it on prod after\n  3. No"
+
+    @Test
+    fun blocked_claudeWithOptions_aKeyPerOption_sendsItsNumber_withoutApproveDeny() {
+        val logged = mutableListOf<String>()
+        val picks = mutableListOf<String>()
+        show(state(HerdrAgentStatus.BLOCKED).copy(screen = threeOptions), logged, picks = picks)
+
+        composeTestRule.onAllNodesWithTag(ASK_OPTION_TAG).assertCountEquals(3)
+        composeTestRule.onAllNodesWithText("Approve").assertCountEquals(0)
+        composeTestRule.onNodeWithText("2. Yes, and run it on prod after").performClick()
+        composeTestRule.onNodeWithText("3. No").performClick()
+
+        assertEquals(listOf("2", "3"), picks)
+        assertEquals(listOf(UsageActions.CHAT_OPTION, UsageActions.CHAT_OPTION), logged)
+    }
+
+    @Test
+    fun blocked_codexWithOptions_readsThemAsText_andKeepsApproveDeny() {
+        show(state(HerdrAgentStatus.BLOCKED, agent = "codex").copy(screen = threeOptions))
+
+        composeTestRule.onAllNodesWithTag(ASK_OPTION_TAG).assertCountEquals(0)
+        composeTestRule.onNodeWithText("Approve").assertExists()
+        composeTestRule.onNodeWithText("Deny").assertExists()
     }
 
     @Test

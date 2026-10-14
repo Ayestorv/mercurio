@@ -25,17 +25,23 @@ import android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.Dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.ComposeNavigator
 import androidx.navigation.compose.NavHost
@@ -50,6 +56,7 @@ import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.connectbot.data.entity.Host
+import org.connectbot.service.DisconnectReason
 import org.connectbot.service.ModifierLevel
 import org.connectbot.service.ModifierState
 import org.connectbot.service.PromptManager
@@ -66,6 +73,8 @@ import org.connectbot.ui.screens.console.CONSOLE_TITLE_TAG
 import org.connectbot.ui.screens.console.ConsoleScreen
 import org.connectbot.ui.screens.console.ConsoleUiState
 import org.connectbot.ui.screens.console.ConsoleViewModel
+import org.connectbot.ui.screens.console.TITLE_PULL_MARK_TAG
+import org.connectbot.ui.screens.console.TitlePull
 import org.connectbot.ui.theme.ConnectBotTheme
 import org.connectbot.util.PreferenceConstants
 import org.junit.After
@@ -78,6 +87,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 
 @HiltAndroidTest
@@ -299,6 +310,101 @@ class ConsoleScreenTest {
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithText("Host list").assertIsDisplayed()
+    }
+
+    /** Puts a finger on the title, pulls it down [by], checks [during] while it is down, then lifts. */
+    private fun pullTitle(by: Dp, during: () -> Unit = {}) {
+        val title = composeTestRule.onNodeWithTag(CONSOLE_TITLE_TAG)
+        title.performTouchInput {
+            down(center)
+            // Past touch slop in small steps, as a finger moves.
+            val steps = 12
+            repeat(steps) { moveBy(Offset(0f, by.toPx() / steps)) }
+        }
+        composeTestRule.waitForIdle()
+        during()
+        title.performTouchInput { up() }
+        composeTestRule.waitForIdle()
+    }
+
+    @Test
+    fun consoleScreen_shortTitlePullDoesNothing() {
+        setContent()
+        navigateToConsoleScreen()
+
+        pullTitle(TitlePull.DEFAULT_THRESHOLD * 0.6f) {
+            composeTestRule.onNodeWithTag(TITLE_PULL_MARK_TAG).assertIsDisplayed()
+        }
+
+        composeTestRule.onNodeWithTag(TITLE_PULL_MARK_TAG).assertDoesNotExist()
+        composeTestRule.onNodeWithText("Host list").assertIsNotDisplayed()
+    }
+
+    @Test
+    fun consoleScreen_titlePullPastTheThresholdOpensTheSessionDrawer_withAMarkWhilePulling() {
+        setContent()
+        navigateToConsoleScreen()
+
+        pullTitle(TitlePull.DEFAULT_THRESHOLD * 1.4f) {
+            composeTestRule.onNodeWithTag(TITLE_PULL_MARK_TAG).assertIsDisplayed()
+            composeTestRule.onNode(hasText("Sessions") and hasAnyAncestor(hasTestTag(TITLE_PULL_MARK_TAG))).assertIsDisplayed()
+            composeTestRule.onNodeWithText("Host list").assertIsNotDisplayed()
+        }
+
+        composeTestRule.onNodeWithTag(TITLE_PULL_MARK_TAG).assertDoesNotExist()
+        // The state the title tap opens.
+        composeTestRule.onNodeWithText("Host list").assertIsDisplayed()
+    }
+
+    @Test
+    fun consoleScreen_titlePullPastTwiceTheThresholdAsks_andDisconnectsOnlyOnConfirm() {
+        val mockBridge = mock(TerminalBridge::class.java)
+        `when`(mockBridge.host).thenReturn(Host(nickname = "box", hostname = "box.example"))
+        `when`(mockBridge.isDisconnected).thenReturn(false)
+        val mockViewModel = mock(ConsoleViewModel::class.java)
+        `when`(mockViewModel.uiState).thenReturn(
+            MutableStateFlow(ConsoleUiState(bridges = listOf(mockBridge), currentBridgeIndex = 0, isLoading = true)),
+        )
+        `when`(mockViewModel.networkStatusMessages).thenReturn(MutableSharedFlow())
+        `when`(mockViewModel.allBridges).thenReturn(MutableStateFlow<List<TerminalBridge>>(emptyList()))
+        `when`(mockViewModel.shouldShowNotificationWarning()).thenReturn(false)
+        setContent(mockConsoleViewModel = mockViewModel)
+        navigateToConsoleScreen(hostId = 1L)
+
+        pullTitle(TitlePull.DEFAULT_THRESHOLD * 2.4f) {
+            composeTestRule.onNode(hasText("Disconnect") and hasAnyAncestor(hasTestTag(TITLE_PULL_MARK_TAG))).assertIsDisplayed()
+        }
+
+        composeTestRule.onNodeWithText("Host list").assertIsNotDisplayed()
+        composeTestRule.onNodeWithText("Yes").assertIsDisplayed()
+        verify(mockBridge, never()).dispatchDisconnect(DisconnectReason.USER_REQUESTED)
+
+        composeTestRule.onNodeWithText("Yes").performClick()
+        composeTestRule.waitForIdle()
+        verify(mockBridge).dispatchDisconnect(DisconnectReason.USER_REQUESTED)
+    }
+
+    @Test
+    fun consoleScreen_titlePullPastTwiceTheThreshold_dismissedDoesNotDisconnect() {
+        val mockBridge = mock(TerminalBridge::class.java)
+        `when`(mockBridge.host).thenReturn(Host(nickname = "box", hostname = "box.example"))
+        `when`(mockBridge.isDisconnected).thenReturn(false)
+        val mockViewModel = mock(ConsoleViewModel::class.java)
+        `when`(mockViewModel.uiState).thenReturn(
+            MutableStateFlow(ConsoleUiState(bridges = listOf(mockBridge), currentBridgeIndex = 0, isLoading = true)),
+        )
+        `when`(mockViewModel.networkStatusMessages).thenReturn(MutableSharedFlow())
+        `when`(mockViewModel.allBridges).thenReturn(MutableStateFlow<List<TerminalBridge>>(emptyList()))
+        `when`(mockViewModel.shouldShowNotificationWarning()).thenReturn(false)
+        setContent(mockConsoleViewModel = mockViewModel)
+        navigateToConsoleScreen(hostId = 1L)
+
+        pullTitle(TitlePull.DEFAULT_THRESHOLD * 2.4f)
+        composeTestRule.onNodeWithText("No").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("Yes").assertDoesNotExist()
+        verify(mockBridge, never()).dispatchDisconnect(DisconnectReason.USER_REQUESTED)
     }
 
     @Test

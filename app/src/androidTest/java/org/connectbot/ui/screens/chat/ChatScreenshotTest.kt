@@ -90,6 +90,7 @@ class ChatScreenshotTest {
                         onRefresh = {},
                         onSend = {},
                         onAnswer = {},
+                        onPick = {},
                         onOpenReader = {},
                     )
                 }

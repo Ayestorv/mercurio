@@ -1401,11 +1401,11 @@
 	<!-- Under the Machines heading; %1$s is a relative time such as "5 minutes ago" -->
 	<string name="machines_last_updated">Last updated %1$s</string>
 	<!-- Shown in the Machines list before it has ever been fetched -->
-	<string name="machines_empty_hint">Connect to a machine running Tailscale to list your tailnet here.</string>
+	<string name="machines_empty_hint">Connect to a machine running Tailscale, or save a Tailscale API secret in Settings, to list your tailnet here.</string>
 	<!-- Shown when the tailnet was read but has no machines to list -->
 	<string name="machines_none_found">No machines found.</string>
 	<!-- Shown when refreshing the Machines list failed or no SSH session was connected -->
-	<string name="machines_refresh_failed">Couldn\'t read Tailscale status. Connect to a machine running Tailscale and try again.</string>
+	<string name="machines_refresh_failed">Couldn\'t read Tailscale status. Connect to a machine running Tailscale, or check the Tailscale API secret, and try again.</string>
 	<!-- Content description of the status dot of a machine that is online -->
 	<string name="machines_status_online">Online</string>
 	<!-- Content description of the status dot of a machine that is offline -->
@@ -1860,6 +1860,14 @@
 	<string name="pref_machine_users_none">None. One name=user line per machine skips the username prompt.</string>
 	<!-- Settings: placeholder in the "Machine usernames" editor; a machine name, "=", and the SSH user -->
 	<string name="pref_machine_users_hint">laptop=alice</string>
+	<!-- Settings: item holding the Tailscale OAuth client secret the Machines list reads the tailnet with when no SSH session is open -->
+	<string name="pref_machine_api_title">Tailscale API secret</string>
+	<!-- Settings: shown under "Tailscale API secret" when one is saved; the secret itself is never shown -->
+	<string name="pref_machine_api_saved">Saved. The Machines list loads from Tailscale with no host connected.</string>
+	<!-- Settings: shown under "Tailscale API secret" when none is saved -->
+	<string name="pref_machine_api_none">None. An OAuth client secret with devices:core:read lists machines with no host connected.</string>
+	<!-- Settings: placeholder in the "Tailscale API secret" editor; leaving it empty clears the saved secret -->
+	<string name="pref_machine_api_hint">tskey-client-… (empty clears it)</string>
 	<!-- Settings: item that opens the wish list -->
 	<string name="pref_wishes_title">Wish list</string>
 	<!-- Settings: status under "Wish list". %1$d is how many entries are open, %2$d how many changes wait to upload to the usage host -->

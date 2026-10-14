@@ -58,6 +58,51 @@ class HerdApprovalTest {
     }
 
     @Test
+    fun guard_sendsOnlyAtTheSameSeqWhileBlocked() {
+        val seen = agent("claude").copy(stateChangeSeq = 7)
+        assertNull(HerdApproval.guard(snapshot(seen), "w1:p1", seq = 7))
+        assertNull("no seq to hold it to", HerdApproval.guard(snapshot(seen), "w1:p1", seq = null))
+        assertEquals(HerdAnswerOutcome.PromptChanged, HerdApproval.guard(snapshot(seen.copy(stateChangeSeq = 9)), "w1:p1", seq = 7))
+        assertEquals(HerdAnswerOutcome.NotBlocked, HerdApproval.guard(snapshot(seen.copy(agentStatus = WORKING, stateChangeSeq = 8)), "w1:p1", seq = 7))
+        assertEquals(HerdAnswerOutcome.NotBlocked, HerdApproval.guard(snapshot(), "w1:p1", seq = 7))
+    }
+
+    // Pane reads copied from Collie (MIT, see NOTICE): the prompt's last lines as each agent drew them.
+    private fun collie(name: String): String = checkNotNull(javaClass.getResourceAsStream("/herdr/collie/$name.txt")).readBytes().decodeToString()
+
+    @Test
+    fun classify_yesOrNoPermissionPrompts_onCollieFixtures() {
+        assertEquals(ApprovalPrompt("1. Yes", "3. No"), HerdApproval.classify(collie("claude--permission-bash")))
+        assertEquals(ApprovalPrompt("1. Yes", "3. No"), HerdApproval.classify(collie("claude--permission-edit")))
+        val codexNo = "No, and tell Codex what to do differently (esc)"
+        assertEquals(ApprovalPrompt("1. Yes, proceed (y)", "2. $codexNo"), HerdApproval.classify(collie("codex--v0156-approval-exec-2opt")))
+        assertEquals(ApprovalPrompt("1. Yes, proceed (y)", "3. $codexNo"), HerdApproval.classify(collie("codex--v0156-approval-patch")))
+        // Option text wrapped onto the next lines at 50 columns.
+        assertEquals(
+            ApprovalPrompt("1. Yes, proceed (y)", "3. No, and tell Codex what to do differently"),
+            HerdApproval.classify(collie("codex--v0156-approval-exec-wrapped-50")),
+        )
+    }
+
+    @Test
+    fun classify_anythingElse_isNoPrompt_onCollieFixtures() {
+        // A question with picks: Enter takes Red, Esc no "No".
+        assertNull(HerdApproval.classify(collie("claude--select-menu")))
+        // A plan: its "No" refines the plan elsewhere, and its yes switches modes.
+        assertNull(HerdApproval.classify(collie("claude--plan-approval")))
+        // Grok draws its options without the numbered grammar.
+        assertNull(HerdApproval.classify(collie("grok--permission-rm")))
+        assertNull(HerdApproval.classify(""))
+    }
+
+    @Test
+    fun classify_needsTheHighlightOnYes_andTheNoAtTheEnd() {
+        val prompt = collie("claude--permission-bash")
+        assertNull("Enter would take option 2", HerdApproval.classify(prompt.replace(" ❯ 1. Yes", "   1. Yes").replace("   2. Yes,", " ❯ 2. Yes,")))
+        assertNull("the prompt is not at the bottom", HerdApproval.classify(prompt + "\n● Bash(ls)\n  ⎿  a\n  b\n  c\n  d"))
+    }
+
+    @Test
     fun sendKeys_quotesThePaneAndRefusesOddIds() {
         assertEquals("bash -lc 'herdr pane send-keys '\\''w1:p1'\\'' enter'", HerdApproval.sendKeysCommand("w1:p1", HerdAnswer.APPROVE))
         assertEquals("bash -lc 'herdr pane send-keys '\\''w1:p1'\\'' esc'", HerdApproval.sendKeysCommand("w1:p1", HerdAnswer.DENY))
@@ -66,6 +111,29 @@ class HerdApprovalTest {
             "bash -lc 'herdr --session '\\''work'\\'' pane send-keys '\\''w1:p1'\\'' enter'",
             HerdApproval.sendKeysCommand("w1:p1", HerdAnswer.APPROVE, "work"),
         )
+    }
+
+    @Test
+    fun optionKeys_claudeTakesEachOptionsNumber_otherKindsNone() {
+        val options = listOf("1. Yes", "2. Yes, and always allow access to scratch/ from this project", "3. No")
+        assertEquals(listOf("1", "2", "3"), HerdApproval.optionKeys("claude", options))
+        // codex is not measured; grok and an unknown kind are not proven at all.
+        assertNull(HerdApproval.optionKeys("codex", options))
+        assertNull(HerdApproval.optionKeys("grok", options))
+        assertNull(HerdApproval.optionKeys(null, options))
+        assertNull("no options", HerdApproval.optionKeys("claude", emptyList()))
+        assertNull("not from 1", HerdApproval.optionKeys("claude", listOf("2. Yes", "3. No")))
+        assertNull("one digit only", HerdApproval.optionKeys("claude", (1..10).map { "$it. pick $it" }))
+    }
+
+    @Test
+    fun sendKeys_anOptionsNumber_sendsJustThatNumber() {
+        assertEquals("bash -lc 'herdr pane send-keys '\\''w1:p1'\\'' 3'", HerdApproval.sendKeysCommand("w1:p1", "3"))
+        assertEquals(
+            "bash -lc 'herdr --session '\\''work'\\'' pane send-keys '\\''w1:p1'\\'' 2'",
+            HerdApproval.sendKeysCommand("w1:p1", "2", "work"),
+        )
+        assertTrue(runCatching { HerdApproval.sendKeysCommand("w1:p1", "1; rm -rf ~") }.isFailure)
     }
 
     @Test
@@ -136,6 +204,52 @@ class HerdApprovalTest {
         assertEquals(HerdAnswerOutcome.Sent, session(host).answer("w1:p1", HerdAnswer.APPROVE))
         assertEquals(1, host.ran.count { "api snapshot" in it })
         assertEquals(HerdApproval.sendKeysCommand("w1:p1", HerdAnswer.APPROVE), host.ran.last())
+    }
+
+    @Test
+    fun answer_anOption_sameSeqStillBlocked_sendsItsNumberOnly() = runTest {
+        val host = Host(blockedAt(7))
+
+        assertEquals(HerdAnswerOutcome.Sent, session(host).answer("w1:p1", "3", "default", seq = 7))
+        assertEquals(listOf(HerdApproval.sendKeysCommand("w1:p1", "3")), host.ran.filter { "send-keys" in it })
+        // A newer prompt than the one the key was on: nothing goes out.
+        val moved = Host(blockedAt(9))
+        assertEquals(HerdAnswerOutcome.PromptChanged, session(moved).answer("w1:p1", "3", "default", seq = 7))
+        assertTrue(moved.ran.none { "send-keys" in it })
+    }
+
+    // The card saw this prompt at seq 7.
+    private fun blockedAt(seq: Long, status: String = "blocked") = """{"pane_id":"w1:p1","agent":"claude","agent_status":"$status","state_change_seq":$seq}"""
+
+    @Test
+    fun answer_sameSeqStillBlocked_sendsOneKeyWithTheChosenOption() = runTest {
+        for (answer in HerdAnswer.entries) {
+            val host = Host(blockedAt(7))
+
+            assertEquals(HerdAnswerOutcome.Sent, session(host).answer("w1:p1", answer, seq = 7))
+            val sent = host.ran.filter { "send-keys" in it }
+            assertEquals(listOf(HerdApproval.sendKeysCommand("w1:p1", answer)), sent)
+            assertTrue(sent.single().endsWith(" ${answer.key}'"))
+        }
+    }
+
+    @Test
+    fun answer_seqChanged_sendsNothingAndSaysThePromptChanged() = runTest {
+        val host = Host(blockedAt(9))
+
+        assertEquals(HerdAnswerOutcome.PromptChanged, session(host).answer("w1:p1", HerdAnswer.APPROVE, seq = 7))
+        assertTrue(host.ran.none { "send-keys" in it })
+    }
+
+    @Test
+    fun answer_leftBlocked_sendsNothingAndSaysItNoLongerWaits() = runTest {
+        // Same seq or not, an agent that is not blocked gets nothing.
+        for (seq in listOf(7L, 8L)) {
+            val host = Host(blockedAt(seq, status = "working"))
+
+            assertEquals(HerdAnswerOutcome.NotBlocked, session(host).answer("w1:p1", HerdAnswer.APPROVE, seq = 7))
+            assertTrue(host.ran.none { "send-keys" in it })
+        }
     }
 
     @Test

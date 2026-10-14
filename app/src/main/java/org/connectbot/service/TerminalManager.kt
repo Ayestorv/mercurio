@@ -1114,6 +1114,9 @@ class TerminalManager :
         }
     }
 
+    /** Whether the phone has a connected network now. */
+    fun isNetworkUp(): Boolean = connectivityMonitor.getCurrentNetworkInfo()?.isConnected == true
+
     /**
      * Reconnect all bridges that were pending a reconnect when connectivity
      * was lost.

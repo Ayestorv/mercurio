@@ -55,6 +55,8 @@
 	<string name="board_context_detail">ctx %1$d%% · %2$s</string>
 	<!-- Agents board: Approve or Deny found the agent no longer waiting, so nothing was sent -->
 	<string name="board_answer_not_blocked">It no longer waits for an answer; nothing was sent.</string>
+	<!-- Agents board: Approve or Deny found the agent on a newer prompt than the card showed, so nothing was sent -->
+	<string name="board_answer_prompt_changed">The prompt changed since this card showed it; nothing was sent.</string>
 	<!-- Agents board: Approve or Deny failed; %1$s is the reason, one line -->
 	<string name="board_answer_failed">Not sent: %1$s</string>
 </resources>

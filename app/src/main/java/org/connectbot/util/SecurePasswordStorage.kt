@@ -160,11 +160,31 @@ class SecurePasswordStorage @Inject constructor(
         prefs.edit().remove(getPasswordKey(hostId)).apply()
     }
 
+    /**
+     * Save an app secret that belongs to no host, such as an API credential,
+     * under [name] (null or empty to clear).
+     */
+    fun saveSecret(name: String, value: String?) {
+        val key = "$SECRET_PREFIX$name"
+        if (value.isNullOrEmpty()) {
+            prefs.edit().remove(key).apply()
+        } else {
+            encrypt(value)?.let { prefs.edit().putString(key, it).apply() }
+        }
+    }
+
+    /** The secret saved under [name], or null if none is saved. */
+    fun getSecret(name: String): String? = prefs.getString("$SECRET_PREFIX$name", null)?.let { decrypt(it) }
+
+    /** True when a secret is saved under [name]. */
+    fun hasSecret(name: String): Boolean = prefs.contains("$SECRET_PREFIX$name")
+
     private fun getPasswordKey(hostId: Long): String = "$KEY_PREFIX$hostId"
 
     companion object {
         private const val PREFS_FILE_NAME = "secure_host_passwords"
         private const val KEY_PREFIX = "password_"
+        private const val SECRET_PREFIX = "secret_"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "connectbot_password_key"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"

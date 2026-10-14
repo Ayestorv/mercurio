@@ -30,6 +30,10 @@ package solutions.ormus.logos.terminal
  *
  * The alternate screen (?47, ?1047, ?1049) is tracked from the same output: a full-screen
  * program such as the Herdr client draws there, a shell prompt does not.
+ *
+ * Application cursor keys (DECCKM, ?1) are tracked too, for the arrows a drag sends
+ * ([arrow]). Leaving the alternate screen keeps them: a shell such as zsh turns them on at
+ * its prompt, and the program that leaves turns them off itself.
  */
 class TerminalMouse {
     private enum class Encoding { LEGACY, SGR, URXVT }
@@ -39,6 +43,7 @@ class TerminalMouse {
     private var encoding = Encoding.LEGACY
 
     private var alternate = false
+    private var cursorKeys = false
     private var entered = 0
 
     // An unfinished sequence at the end of the last output, finished by the next.
@@ -75,6 +80,11 @@ class TerminalMouse {
     /** Forget every mode: a new connection starts with none, on the normal screen. */
     @Synchronized
     fun reset() {
+        cursorKeys = false
+        resetScreen()
+    }
+
+    private fun resetScreen() {
         tracking = 0
         encoding = Encoding.LEGACY
         alternate = false
@@ -103,8 +113,35 @@ class TerminalMouse {
         }
     }
 
+    /**
+     * The bytes for one wheel notch at the 1-based [col] and [row]: button 64 for [up], 65 for
+     * down, a press with no release, as xterm sends them. Null when the program did not ask
+     * for mouse reports, or the cell is past the legacy encoding's reach.
+     */
+    @Synchronized
+    fun wheel(col: Int, row: Int, up: Boolean): ByteArray? {
+        if (tracking == 0) return null
+        val button = if (up) WHEEL_UP else WHEEL_DOWN
+        return when (encoding) {
+            Encoding.SGR -> "$ESC[<$button;$col;${row}M".toByteArray(Charsets.US_ASCII)
+
+            Encoding.URXVT -> "$ESC[${32 + button};$col;${row}M".toByteArray(Charsets.US_ASCII)
+
+            Encoding.LEGACY -> {
+                if (col > LEGACY_MAX || row > LEGACY_MAX) return null
+                listOf(0x1b, '['.code, 'M'.code, 32 + button, 32 + col, 32 + row).map { it.toByte() }.toByteArray()
+            }
+        }
+    }
+
+    /** The bytes for [key]: ESC [ B for down, or ESC O B while the program turned on application cursor keys. */
+    @Synchronized
+    fun arrow(key: TerminalArrow): ByteArray = "$ESC${if (cursorKeys) 'O' else '['}${key.final}".toByteArray(Charsets.US_ASCII)
+
     private fun set(mode: Int, on: Boolean) {
         when (mode) {
+            DECCKM -> cursorKeys = on
+
             X10, 1000, 1002, 1003 -> tracking = if (on) mode else 0
 
             1006 -> encoding = if (on) Encoding.SGR else Encoding.LEGACY
@@ -114,7 +151,7 @@ class TerminalMouse {
             47, 1047, 1049 -> {
                 if (on && !alternate) entered++
                 alternate = on
-                if (!on) reset()
+                if (!on) resetScreen()
             }
         }
     }
@@ -122,9 +159,12 @@ class TerminalMouse {
     companion object {
         private const val ESC = '\u001b'
         private const val RIS = "\u001bc"
+        private const val DECCKM = 1
         private const val X10 = 9
         private const val PRESS = 0
         private const val RELEASE = 3
+        private const val WHEEL_UP = 64
+        private const val WHEEL_DOWN = 65
 
         // The legacy encoding sends 32 + the 1-based column or row in one byte.
         private const val LEGACY_MAX = 223
@@ -141,3 +181,6 @@ class TerminalMouse {
         fun cell(x: Float, y: Float, cellWidth: Float, cellHeight: Float, cols: Int, rows: Int): Pair<Int, Int> = ((x / cellWidth).toInt().coerceIn(0, cols - 1) + 1) to ((y / cellHeight).toInt().coerceIn(0, rows - 1) + 1)
     }
 }
+
+/** An arrow key, by the final byte of its sequence. */
+enum class TerminalArrow(val final: Char) { UP('A'), DOWN('B'), RIGHT('C'), LEFT('D') }

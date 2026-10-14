@@ -19,9 +19,13 @@ package solutions.ormus.logos.herd
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -201,6 +205,35 @@ class HerdSession(
         _sessions.value.forEach { refresh(it) }
     }
 
+    /** Fetch every running session the monitor does not poll (neither the default nor the attached one), one read each. */
+    suspend fun refreshOthers() {
+        val polled = setOf(HerdrCommands.DEFAULT_SESSION, _attached.value)
+        _sessions.value.filter { it !in polled }.forEach { refresh(it) }
+    }
+
+    /** The Agents board's reads while it shows: every session at once, then the unpolled ones every [BOARD_POLL_MS]. */
+    suspend fun pollBoard() {
+        refreshAll()
+        while (true) {
+            delay(BOARD_POLL_MS)
+            refreshOthers()
+        }
+    }
+
+    /**
+     * Keep the Needs you count fresh for the sessions the monitor does not poll while this
+     * session's console shows with neither the board nor Jump to open: one read of each every
+     * [OTHERS_POLL_MS] while [foreground] holds, nothing while the app is in the background.
+     */
+    suspend fun pollOthers(foreground: Flow<Boolean>) {
+        foreground.distinctUntilChanged().collectLatest { shown ->
+            while (shown) {
+                delay(OTHERS_POLL_MS)
+                refreshOthers()
+            }
+        }
+    }
+
     /** The last [lines] lines of [paneId] in [session], as plain text; null when the read failed. */
     suspend fun readPane(paneId: String, session: String, lines: Int = HerdApproval.READ_LINES): String? = withContext(io) { stdoutOrNull(AgentsBoard.readCommand(session, paneId, lines)) }
 
@@ -358,14 +391,18 @@ class HerdSession(
     /**
      * Answer the blocked agent in [session]'s [paneId] from its notification: read a fresh
      * snapshot of that session and send [answer]'s key only if that pane is still blocked
-     * on an answerable agent.
+     * on an answerable agent, and, when [seq] is given, at the `state_change_seq` the
+     * prompt was shown at.
      */
-    suspend fun answer(paneId: String, answer: HerdAnswer, session: String = HerdrCommands.DEFAULT_SESSION): HerdAnswerOutcome = withContext(io) {
+    suspend fun answer(paneId: String, answer: HerdAnswer, session: String = HerdrCommands.DEFAULT_SESSION, seq: Long? = null): HerdAnswerOutcome = answer(paneId, answer.key, session, seq)
+
+    /** [answer] with [keys] for the key: a Herdr key name, or the number of the option a tap picked. */
+    suspend fun answer(paneId: String, keys: String, session: String = HerdrCommands.DEFAULT_SESSION, seq: Long? = null): HerdAnswerOutcome = withContext(io) {
         val snapshot = stdoutOrNull(HerdrSessions.snapshotCommand(session))?.let { parseHerdrSnapshot(it) }
             ?: return@withContext HerdAnswerOutcome.Failed(FixPrompt.herdrReason(_failure.value))
         keep(session, snapshot)
-        if (!HerdApproval.stillBlocked(snapshot, paneId)) return@withContext HerdAnswerOutcome.NotBlocked
-        val error = HerdrApi.parseCommandError(run(HerdApproval.sendKeysCommand(paneId, answer, session)))
+        HerdApproval.guard(snapshot, paneId, seq)?.let { return@withContext it }
+        val error = HerdrApi.parseCommandError(run(HerdApproval.sendKeysCommand(paneId, keys, session)))
         if (error != null) return@withContext HerdAnswerOutcome.Failed(oneLine(error.message.ifBlank { error.code }))
         // The attention rules watch the default session only.
         if (HerdrSessions.isDefault(session)) attention.answered(paneId)
@@ -410,6 +447,12 @@ class HerdSession(
 
     companion object {
         const val POLL_INTERVAL_MS = 4_000L
+
+        /** How often the open Agents board reads the sessions the monitor does not poll. */
+        const val BOARD_POLL_MS = 3 * POLL_INTERVAL_MS
+
+        /** How often the console reads them for the Needs you count, with the board and Jump to closed. */
+        const val OTHERS_POLL_MS = 30_000L
         private const val MAX_ERROR_CHARS = 160
     }
 }

@@ -66,7 +66,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -85,6 +84,8 @@ import org.connectbot.ui.components.OrmusKey
 import org.connectbot.ui.components.StatusDot
 import org.connectbot.ui.components.WORD_KEY_PADDING
 import org.connectbot.ui.screens.chat.AgentChat
+import org.connectbot.ui.screens.chat.AskOptions
+import org.connectbot.ui.screens.chat.AskQuestion
 import org.connectbot.ui.screens.chat.ChatAsk
 import org.connectbot.ui.theme.Ormus
 import org.connectbot.ui.theme.OrmusCornerShape
@@ -118,9 +119,6 @@ internal val BOARD_DIALOG_PROPERTIES = DialogProperties(usePlatformDefaultWidth 
 /** The board lays its sections side by side from this width (a tablet, an open foldable). */
 private val BOARD_COLUMNS_MIN_WIDTH = 720.dp
 
-/** How often the sessions the Herdr side does not poll are read again while the board shows. */
-private const val OTHERS_REFRESH_MS = 3 * HerdSession.POLL_INTERVAL_MS
-
 /** How often the cards' "in this state for" ages move on. */
 private const val AGE_TICK_MS = 30_000L
 
@@ -132,8 +130,8 @@ private const val SCREEN_LINES = 8
  * in Needs you, Working, Done and Idle. Live from the snapshots the Herdr side already
  * polls (the default session and the attached one); the other sessions are read as it
  * opens and every few polls while it shows. A tap opens the agent's chat ([onChat]), or
- * jumps to it when it has none ([onJump], also a long press); Approve, Deny and the reply
- * box answer a waiting agent in its own session.
+ * jumps to it when it has none ([onJump], also a long press); its option keys (or Approve
+ * and Deny) and the reply box answer a waiting agent in its own session.
  */
 @Composable
 fun AgentsBoardDialog(
@@ -148,14 +146,7 @@ fun AgentsBoardDialog(
     val lifecycle = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     LaunchedEffect(session) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            session.refreshAll()
-            while (true) {
-                delay(OTHERS_REFRESH_MS)
-                val polled = setOf(HerdrCommands.DEFAULT_SESSION, session.attached.value)
-                session.sessions.value.filter { it !in polled }.forEach { session.refresh(it) }
-            }
-        }
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { session.pollBoard() }
     }
     val now by produceState(System.currentTimeMillis()) {
         while (true) {
@@ -164,7 +155,18 @@ fun AgentsBoardDialog(
         }
     }
     val snapshots = boardSnapshots(primary, others, sessions)
-    var answer by remember { mutableStateOf<HerdAnswerOutcome?>(null) }
+    // What came of the last answer on each card that did not reach its agent, by card key.
+    var answers by remember { mutableStateOf(mapOf<String, HerdAnswerOutcome>()) }
+    fun outcome(card: BoardCard, outcome: HerdAnswerOutcome) {
+        answers = if (outcome is HerdAnswerOutcome.Sent) answers - card.key else answers + (card.key to outcome)
+    }
+
+    // Approve, Deny or an option key, then the agent's state read again, so the card moves on.
+    fun answer(card: BoardCard, keys: String) = scope.launch {
+        val outcome = session.answer(card.paneId, keys, card.session, card.seq)
+        outcome(card, outcome)
+        if (outcome is HerdAnswerOutcome.Sent) session.refresh(card.session)
+    }
     Dialog(
         onDismissRequest = onDismiss,
         properties = BOARD_DIALOG_PROPERTIES,
@@ -176,18 +178,15 @@ fun AgentsBoardDialog(
             canChat = { card -> canChat(snapshots[card.session], card) },
             onChat = onChat,
             onJump = onJump,
-            onAnswer = { card, reply ->
-                scope.launch { answer = session.answer(card.paneId, reply, card.session).takeIf { it !is HerdAnswerOutcome.Sent } }
-            },
+            onAnswer = { card, reply -> answer(card, reply.key) },
+            onPick = { card, keys -> answer(card, keys) },
             onReply = { card, text ->
-                scope.launch {
-                    answer = session.reply(card.paneId, card.session, AgentChat.sendCommand(card.paneId, text, card.session)).takeIf { it !is HerdAnswerOutcome.Sent }
-                }
+                scope.launch { outcome(card, session.reply(card.paneId, card.session, AgentChat.sendCommand(card.paneId, text, card.session))) }
             },
             readScreen = { card -> session.readPane(card.paneId, card.session) },
             onRefresh = { scope.launch { session.refreshAll() } },
             onClose = onDismiss,
-            answer = answer,
+            answers = answers,
         )
     }
 }
@@ -204,13 +203,15 @@ fun AgentsBoardContent(
     onChat: (BoardCard) -> Unit,
     onJump: (BoardCard) -> Unit,
     onAnswer: (BoardCard, HerdAnswer) -> Unit,
+    /** A tap on an option key of a card's ask: the card and that option's keys. */
+    onPick: (BoardCard, String) -> Unit,
     onReply: (BoardCard, String) -> Unit,
     readScreen: suspend (BoardCard) -> String?,
     onRefresh: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    /** The last Approve, Deny or reply that did not reach a waiting agent. */
-    answer: HerdAnswerOutcome? = null,
+    /** By card key, the last Approve, Deny, option or reply that did not reach that card's agent. */
+    answers: Map<String, HerdAnswerOutcome> = emptyMap(),
     /** The bars and keyboard to keep clear of: the dialog draws edge to edge, under the status bar. */
     windowInsets: WindowInsets = WindowInsets.safeDrawing,
 ) {
@@ -243,11 +244,16 @@ fun AgentsBoardContent(
             usage.log(if (reply == HerdAnswer.APPROVE) UsageActions.BOARD_APPROVE else UsageActions.BOARD_DENY)
             onAnswer(card, reply)
         },
+        pick = { card, keys ->
+            usage.log(UsageActions.BOARD_OPTION)
+            onPick(card, keys)
+        },
         reply = { card, text ->
             usage.log(UsageActions.BOARD_REPLY)
             onReply(card, text)
         },
         readScreen = readScreen,
+        outcome = { answers[it.key] },
     )
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -274,18 +280,6 @@ fun AgentsBoardContent(
                 }) {
                     Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.board_refresh))
                 }
-            }
-            answer?.let { outcome ->
-                Text(
-                    when (outcome) {
-                        is HerdAnswerOutcome.Failed -> stringResource(R.string.board_answer_failed, outcome.reason)
-                        else -> stringResource(R.string.board_answer_not_blocked)
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    // Gold is the only raised voice, never red.
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
             }
             when {
                 loading -> Note(stringResource(R.string.board_loading))
@@ -318,7 +312,7 @@ fun AgentsBoardContent(
     }
 }
 
-/** What a card does on a tap, a long press, its fold key, its answer keys and its reply box. */
+/** What a card does on a tap, a long press, its fold key, its answer and option keys and its reply box. */
 private class CardActions(
     val now: Long,
     val isOpen: (BoardCard) -> Boolean,
@@ -326,8 +320,10 @@ private class CardActions(
     val tap: (BoardCard) -> Unit,
     val longPress: (BoardCard) -> Unit,
     val answer: (BoardCard, HerdAnswer) -> Unit,
+    val pick: (BoardCard, String) -> Unit,
     val reply: (BoardCard, String) -> Unit,
     val readScreen: suspend (BoardCard) -> String?,
+    val outcome: (BoardCard) -> HerdAnswerOutcome?,
 )
 
 private fun LazyListScope.section(column: BoardColumn, cards: List<BoardCard>, actions: CardActions) {
@@ -387,8 +383,9 @@ private fun EmptyLine(column: BoardColumn) {
 
 /**
  * One agent: its kind and how long it has been in this state, its task (the terminal
- * title), where it lives. A waiting agent's card reads its screen for the ask and offers
- * Approve and Deny (when they answer its prompt) and a reply box. The fold key reads the
+ * title), where it lives. A waiting agent's card reads its screen for the ask, set apart in
+ * its own block with a key per option where a tap picks it, else Approve and Deny (when
+ * they answer its prompt), and a reply box. The fold key reads the
  * screen once, for the screen's last lines and the context use.
  */
 @Composable
@@ -456,9 +453,13 @@ private fun AgentCard(card: BoardCard, actions: CardActions) {
             )
             val blocked = card.state == HerdrAgentStatus.BLOCKED
             val screen = paneScreen(card, actions.readScreen, wanted = blocked || isOpen)
-            if (blocked) Ask(screen)
+            // Keys only off a read of this prompt: a newer one waits for its own read.
+            val current = screen.text?.takeIf { screen.seq == card.seq }
+            val ask = screen.text?.takeIf { blocked }?.let(ChatAsk::onScreen)
+            val keys = ask?.options?.takeIf { current != null && card.answerable }?.let { HerdApproval.optionKeys(card.agent, it) }
+            if (blocked) Ask(screen, ask, keys) { actions.pick(card, it) }
             if (isOpen) Screen(screen, saysReading = !blocked)
-            if (card.answerable) {
+            if (keys == null && card.approval(current) != null) {
                 Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OrmusKey(
                         label = stringResource(R.string.chat_approve),
@@ -473,38 +474,64 @@ private fun AgentCard(card: BoardCard, actions: CardActions) {
                     )
                 }
             }
+            actions.outcome(card)?.let { AnswerLine(it) }
             if (blocked) ReplyBox(card, actions.reply)
         }
     }
 }
 
-/** A card's read of its pane's screen: [read] once it came back, [text] null when it failed. */
-private class PaneScreen(val read: Boolean, val text: String?)
+/** Why this card's last answer did not reach its agent, in gold: the only raised voice, never red. */
+@Composable
+private fun AnswerLine(outcome: HerdAnswerOutcome) {
+    val text = when (outcome) {
+        HerdAnswerOutcome.Sent -> return
+        HerdAnswerOutcome.NotBlocked -> stringResource(R.string.board_answer_not_blocked)
+        HerdAnswerOutcome.PromptChanged -> stringResource(R.string.board_answer_prompt_changed)
+        is HerdAnswerOutcome.Failed -> stringResource(R.string.board_answer_failed, outcome.reason)
+    }
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 6.dp, end = 8.dp),
+    )
+}
+
+/** A card's read of its pane's screen: [read] once it came back, [text] null when it failed, [seq] the agent's state when read. */
+private class PaneScreen(val read: Boolean, val text: String?, val seq: Long? = null)
 
 /** [card]'s screen while [wanted]: one read when it is wanted and when the agent changes state, never on a timer. */
 @Composable
 private fun paneScreen(card: BoardCard, readScreen: suspend (BoardCard) -> String?, wanted: Boolean): PaneScreen {
     var screen by remember { mutableStateOf(PaneScreen(read = false, text = null)) }
     val reader by rememberUpdatedState(readScreen)
-    LaunchedEffect(card.session, card.paneId, card.state, wanted) {
-        if (wanted) screen = PaneScreen(read = true, text = reader(card))
+    LaunchedEffect(card.session, card.paneId, card.state, card.seq, wanted) {
+        if (wanted) screen = PaneScreen(read = true, text = reader(card), seq = card.seq)
     }
     return screen
 }
 
-/** A waiting agent's ask, found on its screen the way the chat finds it: the question, then its options. */
+/**
+ * A waiting agent's [ask], found on its [screen] the way the chat finds it, in a block of
+ * its own: the question in gold, then its options, keys when [keys] picks them ([onPick]).
+ */
 @Composable
-private fun Ask(screen: PaneScreen) {
-    val ask = screen.text?.let(ChatAsk::onScreen)
-    Column(modifier = Modifier.padding(top = 6.dp, end = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        when {
-            !screen.read -> MonoLabel(stringResource(R.string.board_reading))
+private fun Ask(screen: PaneScreen, ask: ChatAsk.Blocked?, keys: List<String>?, onPick: (String) -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        shape = OrmusCornerShape,
+        modifier = Modifier.padding(top = 6.dp, end = 8.dp).fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            when {
+                !screen.read -> MonoLabel(stringResource(R.string.board_reading))
 
-            screen.text == null -> MonoLabel(stringResource(R.string.board_read_failed))
+                screen.text == null -> MonoLabel(stringResource(R.string.board_read_failed))
 
-            ask != null -> {
-                if (ask.question.isNotEmpty()) Text(ask.question, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                ask.options.forEach { option -> Text(option, fontFamily = OrmusMono, style = MaterialTheme.typography.bodySmall) }
+                ask != null -> {
+                    if (ask.question.isNotEmpty()) AskQuestion(ask.question)
+                    AskOptions(ask.options, keys, onPick)
+                }
             }
         }
     }

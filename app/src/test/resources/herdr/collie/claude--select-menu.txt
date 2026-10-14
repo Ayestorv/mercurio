@@ -1,0 +1,24 @@
+│           /…/scratchpad/fixture-sandbox            │                                                                                                                                                              │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ▎ Fable 5 is back.
+ ▎ Until July 7, you can use up to 50% of your plan's weekly usage limit on Fable 5. If you hit your limit, you can continue on Fable 5 with usage credits. Fable 5 draws down usage faster than Opus 4.8. Learn more
+ ▎ (https://support.claude.com/en/articles/15424964-claude-fable-5-promotional-access)
+
+❯ Use the AskUserQuestion tool to ask me one question: which color theme should the dashboard use? Offer exactly three options: Red, Green, Blue.
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Color Theme
+
+Which color theme should the dashboard use?
+
+❯ 1. Red
+     A warm, high-energy theme with red as the primary accent color.
+  2. Green
+     A calm, natural theme with green as the primary accent color.
+  3. Blue
+     A cool, professional theme with blue as the primary accent color.
+  4. Type something.
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

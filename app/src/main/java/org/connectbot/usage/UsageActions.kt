@@ -94,7 +94,8 @@ object UsageActions {
     // Agent chat: opened from the Herdr panel's Chat key or the Read key on an agent pane
     // (that key also logs reader:open), then closed, read again, a reply sent, Approve or
     // Deny, a tool row opened, the raw terminal output asked for, the pinned ask tapped,
-    // a run of tool calls opened, a long reply shown in full. Never the reply's text.
+    // a run of tool calls opened, a long reply shown in full, an option key of the ask tapped.
+    // Never the reply's text, nor which option.
     const val CHAT_OPEN = "chat:open"
     const val CHAT_CLOSE = "chat:close"
     const val CHAT_REFRESH = "chat:refresh"
@@ -106,6 +107,7 @@ object UsageActions {
     const val CHAT_ASK = "chat:ask"
     const val CHAT_TOOLS = "chat:tools"
     const val CHAT_MORE = "chat:more"
+    const val CHAT_OPTION = "chat:option"
 
     // Diff viewer: opened from the console menu or the Herdr panel's Diff key.
     const val DIFF_OPEN = "diff:open"
@@ -122,9 +124,16 @@ object UsageActions {
     const val DRAWER_DISCONNECT = "drawer:disconnect"
     const val DRAWER_QUICK_CONNECT = "drawer:quick-connect"
     const val DRAWER_HOST_LIST = "drawer:host-list"
+
+    // A downward pull on the console title bar: past one mark the drawer, past two Disconnect.
+    const val TITLE_PULL_DRAWER = "title:pull-drawer"
+    const val TITLE_PULL_DISCONNECT = "title:pull-disconnect"
     const val MACHINES_CONNECT = "machines:connect"
     const val MACHINES_REFRESH = "machines:refresh"
     const val MACHINES_FIX_PROMPT = "machines:fix-prompt"
+
+    // Settings: the Tailscale API secret was saved or cleared (never the secret itself).
+    const val MACHINES_API_SECRET = "machines:api-secret"
 
     // Console top bar, overflow menu and the disconnected overlay.
     const val CONSOLE_BACK = "console:back"
@@ -250,7 +259,8 @@ object UsageActions {
     const val NEEDS_YOU_BOARD = "needs-you:board"
 
     // Agents board: opened from the Herdr panel; a card tapped (chat, or jump for an agent
-    // without one), long-pressed (jump), opened to its screen, answered, replied to; refreshed, closed.
+    // without one), long-pressed (jump), opened to its screen, answered, replied to; refreshed, closed;
+    // an option key of the ask tapped (never which option).
     const val BOARD_OPEN = "board:open"
     const val BOARD_CHAT = "board:chat"
     const val BOARD_JUMP = "board:jump"
@@ -260,6 +270,7 @@ object UsageActions {
     const val BOARD_REPLY = "board:reply"
     const val BOARD_REFRESH = "board:refresh"
     const val BOARD_CLOSE = "board:close"
+    const val BOARD_OPTION = "board:option"
 
     // The one-time "swipe for tabs" hint over a Herdr terminal, put away with its key.
     const val HERDR_SWIPE_INTRO_DISMISS = "herdr-swipe-intro:dismiss"
@@ -320,11 +331,20 @@ object UsageActions {
     // A tap on the terminal sent as a mouse click, to a program that asked for the mouse.
     const val TERMINAL_MOUSE_CLICK = "terminal:mouse-click"
 
+    // A slow one-finger drag on a Herdr terminal sent as mouse wheel reports. Once per drag.
+    const val HERDR_DRAG_SCROLL = "herdr:drag-scroll"
+
+    // A long press held still, then dragged: arrow keys, one per cell crossed. Once per drag.
+    const val GESTURE_DRAG_ARROW = "gesture:drag-arrow"
+
     // Sessions. Recorded by the terminal service, not by a control.
     const val SESSION_START = "session:start"
     const val SESSION_END = "session:end"
     const val SESSION_FAIL = "session:fail"
     const val SESSION_RECONNECT = "session:reconnect"
+
+    // A dropped link reconnected once on its own, with no tap.
+    const val SESSION_AUTO_RECONNECT = "session:auto-reconnect"
 
     // Sync to Sun.
     const val UPLOAD_REFUSED_HOSTKEY = "key:upload-refused-hostkey"
@@ -353,10 +373,11 @@ object UsageActions {
         HERDR_PGUP, HERDR_PGDN, HERDR_DONE,
         READER_OPEN, READER_CLOSE, READER_REFRESH, READER_TOP, READER_PGUP, READER_PGDN,
         READER_BOTTOM, READER_TEXT_SMALLER, READER_TEXT_LARGER,
-        CHAT_OPEN, CHAT_CLOSE, CHAT_REFRESH, CHAT_SEND, CHAT_APPROVE, CHAT_DENY, CHAT_TOOL, CHAT_TERMINAL, CHAT_ASK, CHAT_TOOLS, CHAT_MORE,
+        CHAT_OPEN, CHAT_CLOSE, CHAT_REFRESH, CHAT_SEND, CHAT_APPROVE, CHAT_DENY, CHAT_TOOL, CHAT_TERMINAL, CHAT_ASK, CHAT_TOOLS, CHAT_MORE, CHAT_OPTION,
         DIFF_OPEN, HERDR_SHEET_DIFF, DIFF_FILE, DIFF_BACK, DIFF_DIR, DIFF_REFRESH, DIFF_CLOSE,
         DRAWER_OPEN, DRAWER_SWITCH, DRAWER_DISCONNECT, DRAWER_QUICK_CONNECT, DRAWER_HOST_LIST,
-        MACHINES_CONNECT, MACHINES_REFRESH, MACHINES_FIX_PROMPT,
+        TITLE_PULL_DRAWER, TITLE_PULL_DISCONNECT,
+        MACHINES_CONNECT, MACHINES_REFRESH, MACHINES_FIX_PROMPT, MACHINES_API_SECRET,
         CONSOLE_BACK, CONSOLE_TEXT_INPUT, CONSOLE_PASTE, CONSOLE_MENU,
         MENU_RECONNECT, MENU_DISCONNECT, MENU_URL_SCAN, MENU_RESIZE, MENU_PORT_FORWARDS,
         MENU_FULLSCREEN, MENU_TITLE_BAR, MENU_WISH, MENU_COPY_DETAILS, MENU_SEND_ERROR,
@@ -365,7 +386,7 @@ object UsageActions {
         HOSTLIST_CONNECT, HOSTLIST_ADD, HOSTLIST_SETTINGS, HOSTLIST_WISH, HOSTLIST_COPY_DETAILS, HOSTLIST_SEND_ERROR,
         WISH_SAVE, WISH_EDIT, WISH_DONE, WISH_DELETE,
         SETTINGS_USAGE_SUMMARY, SETTINGS_USAGE_CLEAR, SETTINGS_UPLOAD_NOW, SETTINGS_WISHES,
-        SESSION_START, SESSION_END, SESSION_FAIL, SESSION_RECONNECT,
+        SESSION_START, SESSION_END, SESSION_FAIL, SESSION_RECONNECT, SESSION_AUTO_RECONNECT,
         UPLOAD_REFUSED_HOSTKEY,
         HERD_OPEN, HERD_CARD, HERD_REFRESH, HERD_COMMANDS, HERD_CLOSE,
         FILES_OPEN, FILES_DIR, FILES_REV, FILES_FOLDER, FILES_UP, FILES_FILE, FILES_COPY_PATH, FILES_COPY_TEXT,
@@ -382,7 +403,7 @@ object UsageActions {
         HERDR_SHEET_SIDEBAR, HERDR_SHEET_NAVIGATE_WORKSPACES, HERDR_SHEET_FIX_PROMPT, HERDR_SHEET_RETRY,
         HERDR_SHEET_TAB_KEY, HERDR_SHEET_SESSION,
         HERDR_JUMP_OPEN, HERDR_JUMP_PICK, NEEDS_YOU_JUMP, NEEDS_YOU_BOARD, HERDR_SWIPE_INTRO_DISMISS,
-        BOARD_OPEN, BOARD_CHAT, BOARD_JUMP, BOARD_MORE, BOARD_APPROVE, BOARD_DENY, BOARD_REPLY, BOARD_REFRESH, BOARD_CLOSE,
+        BOARD_OPEN, BOARD_CHAT, BOARD_JUMP, BOARD_MORE, BOARD_APPROVE, BOARD_DENY, BOARD_REPLY, BOARD_REFRESH, BOARD_CLOSE, BOARD_OPTION,
         HERDR_SHEET_KEY_MENU, HERDR_SHEET_KEY_HIDE, HERDR_SHEET_KEY_EDIT, HERDR_SHEET_KEY_ADD,
         HERDR_SHEET_KEY_REMOVE, HERDR_SHEET_RESTORE,
         HERDR_PICKER_SHOW, HERDR_PICKER_PICK, HERDR_PICKER_ATTACH, HERDR_PICKER_DISMISS,
@@ -392,7 +413,7 @@ object UsageActions {
         SWIPE_PREV_TAB, SWIPE_NEXT_TAB, SWIPE_PANE_LEFT, SWIPE_PANE_RIGHT, SWIPE_PREV_WORKSPACE, SWIPE_NEXT_WORKSPACE,
         SWIPE_FLICK_PREV_WORKSPACE, SWIPE_FLICK_NEXT_WORKSPACE, SWIPE_PREV_WORKSPACE_SWITCHER, SWIPE_NEXT_WORKSPACE_SWITCHER,
         SWIPE_FLICK_PREV_WORKSPACE_SWITCHER, SWIPE_FLICK_NEXT_WORKSPACE_SWITCHER,
-        TERMINAL_MOUSE_CLICK,
+        TERMINAL_MOUSE_CLICK, HERDR_DRAG_SCROLL, GESTURE_DRAG_ARROW,
         PUSH_REGISTERED, PUSH_FAILED, PUSH_UNREGISTERED, PUSH_HOST_SYNCED, PUSH_RECEIVED, PUSH_IGNORED,
         AUTH_PASSWORD_SAVED,
     )

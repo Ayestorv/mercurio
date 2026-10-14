@@ -1,0 +1,22 @@
+  to write the file.
+
+• Running touch narrow-approval-test.txt
+
+  Would you like to run the following command?
+
+  Environment: local
+
+  Reason: May I run `touch
+  narrow-approval-test.txt` to create the
+  requested file?
+
+  $ touch narrow-approval-test.txt
+
+› 1. Yes, proceed (y)
+  2. Yes, and don't ask again for commands that
+     start with `touch narrow-approval-test.txt`
+     (p)
+  3. No, and tell Codex what to do differently
+     (esc)
+
+  Press enter to confirm or esc to cancel

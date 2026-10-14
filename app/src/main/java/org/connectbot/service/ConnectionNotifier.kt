@@ -200,7 +200,7 @@ class ConnectionNotifier @Inject constructor() {
                 return
             }
 
-            HerdAnswerOutcome.NotBlocked ->
+            HerdAnswerOutcome.NotBlocked, HerdAnswerOutcome.PromptChanged ->
                 res.getString(R.string.notification_herd_not_waiting, name, host.nickname) to
                     res.getString(R.string.notification_herd_nothing_sent)
 

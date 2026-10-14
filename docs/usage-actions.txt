@@ -57,6 +57,7 @@ chat:terminal
 chat:ask
 chat:tools
 chat:more
+chat:option
 diff:open
 herdr-sheet:diff
 diff:file
@@ -69,9 +70,12 @@ drawer:switch
 drawer:disconnect
 drawer:quick-connect
 drawer:host-list
+title:pull-drawer
+title:pull-disconnect
 machines:connect
 machines:refresh
 machines:fix-prompt
+machines:api-secret
 console:back
 console:text-input
 console:paste
@@ -114,6 +118,7 @@ session:start
 session:end
 session:fail
 session:reconnect
+session:auto-reconnect
 key:upload-refused-hostkey
 herd:open
 herd:card
@@ -185,6 +190,7 @@ board:deny
 board:reply
 board:refresh
 board:close
+board:option
 herdr-sheet:key-menu
 herdr-sheet:key-hide
 herdr-sheet:key-edit
@@ -219,6 +225,8 @@ swipe:next-workspace-switcher
 swipe:flick-prev-workspace-switcher
 swipe:flick-next-workspace-switcher
 terminal:mouse-click
+herdr:drag-scroll
+gesture:drag-arrow
 push:registered
 push:failed
 push:unregistered

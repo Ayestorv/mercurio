@@ -86,11 +86,14 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -434,6 +437,8 @@ fun TerminalComposeBar(
     onChat: (() -> Unit)? = null,
     /** Opens the Agents board, from the Herdr panel's Board key or the Needs you key. */
     onBoard: (() -> Unit)? = null,
+    /** Whether the Agents board shows, reading the other sessions itself. */
+    boardOpen: Boolean = false,
     /** The Herdr panel's Diff key: open the diff viewer. */
     onDiff: (() -> Unit)? = null,
     draft: DictationDraft = remember { DictationDraft() },
@@ -527,7 +532,7 @@ fun TerminalComposeBar(
 
     // Needs you: the agents waiting for the user in every session the Herdr side holds a
     // snapshot of (the Agents board's count). The default and the attached session are polled;
-    // the others are as fresh as the last time the board or Jump to read them.
+    // the others are read by the board and Jump to, and every so often while both are closed.
     val herdrSessions by (bridge.herd?.sessions ?: NO_HERDR_SESSIONS).collectAsState()
     val herdrOthers by (bridge.herd?.others ?: NO_HERDR_OTHERS).collectAsState()
     val needsYou = boardNeedsYou(herdrLive, herdrOthers, herdrSessions)
@@ -555,6 +560,15 @@ fun TerminalComposeBar(
     // Jump to (every tab of every Herdr session) sits where the panel and the tray do.
     var herdrJumpOpen by remember(bridge) { mutableStateOf(false) }
     val herdrJump = herdrJumpOpen && bridge.herd != null && herdrSession
+
+    // With the board and Jump to closed (each reads the other sessions itself), the other
+    // sessions are read every so often while the app is in the foreground, so the Needs you
+    // count drops when an agent there stops waiting.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(bridge.herd, herdrSession, boardOpen, herdrJump) {
+        val herd = bridge.herd ?: return@LaunchedEffect
+        if (herdrSession && !boardOpen && !herdrJump) herd.pollOthers(lifecycle.currentStateFlow.map { it.isAtLeast(Lifecycle.State.STARTED) })
+    }
 
     fun openTray(actionId: String) {
         if (trayOpen) return

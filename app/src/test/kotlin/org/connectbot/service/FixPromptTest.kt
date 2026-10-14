@@ -17,6 +17,7 @@
 
 package org.connectbot.service
 
+import org.connectbot.data.TailscaleRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -86,5 +87,14 @@ class FixPromptTest {
         assertTrue(prompt.startsWith("Mercurio can't load my Tailscale machine list"))
         assertTrue(prompt.contains("`tailscale status --json` over SSH on Sun"))
         assertTrue(prompt.contains("java.io.IOException: channel closed"))
+    }
+
+    @Test
+    fun machines_fromTheApi_saysItWasTheApiNotSsh() {
+        val prompt = FixPrompt.machines(TailscaleRepository.API_SOURCE, "v1.22.0", "java.io.IOException: Tailscale API device list answered HTTP 403")
+
+        assertTrue(prompt.contains("from Tailscale's API (api.tailscale.com)"))
+        assertFalse(prompt.contains("`tailscale status --json`"))
+        assertTrue(prompt.contains("HTTP 403"))
     }
 }

@@ -102,3 +102,31 @@ internal fun clickTap(
     val (col, row) = TerminalMouse.cell(at.x, at.y, cell.width, cell.height, size.columns, size.rows)
     return bridge.mouseClick(col, row)
 }
+
+/**
+ * A slow one-finger drag on [bridge]'s terminal, sent as mouse wheel notches to a program
+ * that asked for mouse reports (Herdr scrolls the pane under them), one per row the finger
+ * crosses. [cell] is the cell in px, empty while it is unknown (a forced size); [size] the
+ * terminal in cells. [onDrag] runs once as each drag starts sending.
+ */
+internal class TerminalWheel(
+    private val bridge: () -> TerminalBridge,
+    private val cell: () -> Size,
+    private val size: () -> TerminalDimensions = { bridge().terminalEmulator.dimensions },
+    val onDrag: () -> Unit = {},
+) {
+    /** The row height in px a drag scrolls by; null when the drag stays termlib's scroll. */
+    fun rowHeight(): Float? {
+        val cell = cell()
+        if (cell.width <= 0f || cell.height <= 0f || !bridge().mouseReporting) return null
+        return cell.height
+    }
+
+    /** One wheel notch, [up] or down, at the cell under [at]. */
+    fun notch(at: Offset, up: Boolean) {
+        val cell = cell()
+        val size = size()
+        val (col, row) = TerminalMouse.cell(at.x, at.y, cell.width, cell.height, size.columns, size.rows)
+        bridge().mouseWheel(col, row, up)
+    }
+}

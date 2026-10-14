@@ -24,7 +24,9 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
@@ -40,6 +42,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.connectbot.ui.screens.chat.ASK_OPTION_TAG
 import org.connectbot.usage.LocalUsageLog
 import org.connectbot.usage.UsageActions
 import org.connectbot.usage.UsageLog
@@ -86,6 +89,7 @@ class AgentsBoardScreenTest {
     private val chats = mutableListOf<String>()
     private val jumps = mutableListOf<String>()
     private val answers = mutableListOf<String>()
+    private val picks = mutableListOf<String>()
     private val replies = mutableListOf<String>()
     private val reads = mutableListOf<String>()
     private val logged = mutableListOf<String>()
@@ -95,9 +99,10 @@ class AgentsBoardScreenTest {
     private fun show(
         shown: List<BoardCard> = cards,
         loading: Boolean = false,
-        answer: HerdAnswerOutcome? = null,
-        screen: String = "Do you want to proceed?\n> 1. Yes\nOpus  ~/src  ctx 42% (84k/200k)",
+        outcomes: Map<String, HerdAnswerOutcome> = emptyMap(),
+        screen: String = "Do you want to proceed?\n> 1. Yes\n  2. No\nEsc to cancel\nOpus  ~/src  ctx 42% (84k/200k)",
         windowInsets: WindowInsets = WindowInsets(0),
+        screenOf: (BoardCard) -> String = { screen },
     ) {
         composeTestRule.setContent {
             CompositionLocalProvider(LocalUsageLog provides UsageLog { logged += it }) {
@@ -110,14 +115,15 @@ class AgentsBoardScreenTest {
                     onChat = { chats += it.id() },
                     onJump = { jumps += it.id() },
                     onAnswer = { card, reply -> answers += "${card.id()} $reply" },
+                    onPick = { card, keys -> picks += "${card.id()} $keys" },
                     onReply = { card, text -> replies += "${card.id()} $text" },
                     readScreen = { card ->
                         reads += card.id()
-                        screen
+                        screenOf(card)
                     },
                     onRefresh = {},
                     onClose = {},
-                    answer = answer,
+                    answers = outcomes,
                     windowInsets = windowInsets,
                 )
             }
@@ -176,7 +182,8 @@ class AgentsBoardScreenTest {
     fun tap_opensTheChatOfThatSessionsPane() {
         show()
 
-        composeTestRule.onAllNodesWithText("task w1:p1")[0].performClick()
+        // On its title: the middle of a waiting card is its option keys.
+        composeTestRule.onAllNodesWithText("task w1:p1", useUnmergedTree = true)[0].performClick()
 
         // The blocked claude in work is first: Needs you leads.
         assertEquals(listOf("work/w1:p1"), chats)
@@ -205,9 +212,45 @@ class AgentsBoardScreenTest {
         assertEquals(emptyList<String>(), chats)
     }
 
+    // The ask in the issue, with three options.
+    private val threeOptions = "Run the migration on staging?\n> 1. Yes\n  2. Yes, and run it on prod after\n  3. No\nEsc to cancel"
+
+    // The same two sessions with codex in claude's place: its option keys are not measured.
+    private fun withCodex() = cards.map { if (it.agent == "claude") it.copy(agent = "codex") else it }
+
+    @Test
+    fun optionKeys_onAClaudeAsk_oneKeyPerOption_sendEachNumberToThatSessionsPane() {
+        show(screen = threeOptions)
+
+        composeTestRule.onNodeWithText("Run the migration on staging?").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(ASK_OPTION_TAG).assertCountEquals(3)
+        // The keys answer the prompt; Approve and Deny would say less, so they go.
+        composeTestRule.onAllNodesWithText("Approve").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Deny").assertCountEquals(0)
+        composeTestRule.onNodeWithText("3. No").performClick()
+        composeTestRule.onNodeWithText("2. Yes, and run it on prod after").performClick()
+        composeTestRule.onNodeWithText("1. Yes").performClick()
+
+        // A claude prompt takes the option's number: it selects and submits, no Enter.
+        assertEquals(listOf("work/w1:p1 3", "work/w1:p1 2", "work/w1:p1 1"), picks)
+        assertEquals(List(3) { UsageActions.BOARD_OPTION }, logged)
+        assertEquals(emptyList<String>(), answers)
+        assertEquals("a pick is not a tap on the card", emptyList<String>(), chats)
+        composeTestRule.onAllNodesWithTag(BOARD_REPLY_TAG).assertCountEquals(1)
+    }
+
+    @Test
+    fun codexAsk_showsItsOptionsAsText_andKeepsApproveAndDeny() {
+        show(shown = withCodex(), screen = threeOptions)
+
+        composeTestRule.onAllNodesWithTag(ASK_OPTION_TAG).assertCountEquals(0)
+        composeTestRule.onNodeWithText("3. No").assertIsDisplayed()
+        assertEquals(emptyList<String>(), picks)
+    }
+
     @Test
     fun approveAndDeny_answerThatSessionsPane() {
-        show()
+        show(shown = withCodex())
 
         composeTestRule.onAllNodesWithText("Approve").assertCountEquals(1)
         composeTestRule.onNodeWithText("Approve").performClick()
@@ -216,12 +259,55 @@ class AgentsBoardScreenTest {
         assertEquals(listOf("work/w1:p1 ${HerdAnswer.APPROVE}", "work/w1:p1 ${HerdAnswer.DENY}"), answers)
         assertEquals(listOf(UsageActions.BOARD_APPROVE, UsageActions.BOARD_DENY), logged)
         assertEquals("an answer is not a tap on the card", emptyList<String>(), chats)
+        composeTestRule.onAllNodesWithTag(ASK_OPTION_TAG).assertCountEquals(0)
     }
 
     @Test
     fun anAnswerThatWentNowhere_saysSo() {
-        show(answer = HerdAnswerOutcome.NotBlocked)
+        show(outcomes = mapOf("work/w1:p1" to HerdAnswerOutcome.NotBlocked))
         composeTestRule.onNodeWithText("It no longer waits for an answer; nothing was sent.").assertIsDisplayed()
+    }
+
+    @Test
+    fun anAnswerToAChangedPrompt_saysSoOnThatCard() {
+        show(outcomes = mapOf("work/w1:p1" to HerdAnswerOutcome.PromptChanged))
+        composeTestRule.onNodeWithText("The prompt changed since this card showed it; nothing was sent.").assertIsDisplayed()
+    }
+
+    // Pane reads copied from Collie (MIT, see NOTICE).
+    private fun collie(name: String): String = checkNotNull(javaClass.getResourceAsStream("/herdr/collie/$name.txt")).readBytes().decodeToString()
+
+    @Test
+    // Tall enough that every card is composed.
+    @Config(qualifiers = "w400dp-h5000dp")
+    fun approveAndDeny_showOnlyOnAPromptTheyAnswer_onCollieFixtures() {
+        // One blocked agent per pane read, of the fixture's kind; only codex's yes-or-no permission
+        // prompt gets the buttons: a claude prompt with options gets a key per option instead.
+        val fixtures = listOf("claude--select-menu", "claude--plan-approval", "grok--permission-rm", "claude--permission-bash", "codex--v0156-approval-patch")
+        val blocked = AgentsBoard.cards(
+            mapOf(
+                "default" to boardSnapshot(
+                    workspaces = listOf("w1" to "alpha"),
+                    tabs = listOf("w1:t1" to "build"),
+                    agents = fixtures.mapIndexed { i, name -> boardAgent("w1:p$i", "w1:t1", name.substringBefore("--"), HerdrAgentStatus.BLOCKED) },
+                ),
+            ),
+        )
+        show(shown = blocked, screenOf = { collie(fixtures[it.paneId.substringAfter(":p").toInt()]) })
+
+        // A card merges its texts, so it is found by its own title; its keys sit under it.
+        fun onCard(pane: String) = hasAnyAncestor(hasTestTag(BOARD_CARD_TAG) and hasText("task $pane"))
+        composeTestRule.onAllNodesWithText("Approve").assertCountEquals(1)
+        composeTestRule.onAllNodes(hasTestTag(ASK_OPTION_TAG) and onCard("w1:p3")).assertCountEquals(3)
+        composeTestRule.onAllNodes(hasTestTag(ASK_OPTION_TAG) and onCard("w1:p2")).assertCountEquals(0)
+        composeTestRule.onAllNodes(hasTestTag(ASK_OPTION_TAG) and onCard("w1:p4")).assertCountEquals(0)
+        fixtures.forEachIndexed { i, name ->
+            val expected = if (name.contains("approval-patch")) 1 else 0
+            composeTestRule.onAllNodes(hasText("Approve") and onCard("w1:p$i")).assertCountEquals(expected)
+            composeTestRule.onAllNodes(hasText("Deny") and onCard("w1:p$i")).assertCountEquals(expected)
+        }
+        // The ask's reply box stays on every waiting card: only the buttons go.
+        composeTestRule.onAllNodesWithTag(BOARD_REPLY_TAG).assertCountEquals(fixtures.size)
     }
 
     @Test
@@ -274,8 +360,8 @@ class AgentsBoardScreenTest {
         composeTestRule.onNodeWithText("2. Yes, allow all edits this session").assertIsDisplayed()
         composeTestRule.onNodeWithText("3. No, and tell Claude what to do differently (esc)").assertIsDisplayed()
         composeTestRule.onAllNodes(hasText("ctx 42%", substring = true)).assertCountEquals(0)
-        composeTestRule.onNodeWithText("Approve").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Deny").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(ASK_OPTION_TAG).assertCountEquals(3)
+        composeTestRule.onAllNodesWithText("Approve").assertCountEquals(0)
     }
 
     @Test

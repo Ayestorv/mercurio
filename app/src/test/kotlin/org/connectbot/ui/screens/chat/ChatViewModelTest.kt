@@ -35,7 +35,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import solutions.ormus.logos.herd.HerdAnswer
 import solutions.ormus.logos.herd.HerdAnswerOutcome
 import solutions.ormus.logos.herd.HerdrAgentInfo
 import solutions.ormus.logos.herd.HerdrAgentSession
@@ -90,7 +89,7 @@ class ChatViewModelTest {
         val sends: List<String> get() = commands.filter { "send-text" in it }
         val reads: List<String> get() = commands.filter { "MERCURIO_CHAT" in it }
 
-        override suspend fun answer(paneId: String, answer: HerdAnswer) = HerdAnswerOutcome.NotBlocked
+        override suspend fun answer(paneId: String, keys: String) = HerdAnswerOutcome.NotBlocked
 
         var screenText: String? = "Do you want to proceed?\n❯ 1. Yes\n  2. No"
         val screens = mutableListOf<String>()

@@ -8,7 +8,7 @@ auto_merge:
   requires:
     - verdict PASS on head      # the Kitchen seat's verdict, posted on the PR for its latest commit
     - gate green                # ./gradlew testOssDebugUnitTest spotlessCheck :app:assembleOssDebug, then :app:lintOssDebug alone
-    - leak scan clean           # the kitchen leak scan over the diff, the title and the body
+    - leak scan clean           # deny list over the diff; secret and address shapes over the title and body
     - swarm clean               # the review swarm reports PASS, no ISSUES
   classes: [repo, host]         # Menu atom classes that may merge on their own; eval atoms never do
   branches: [build, dream, garden]  # garden: the gardener's weed pulls go through verify like any build (operator's call, 2026-10-12)

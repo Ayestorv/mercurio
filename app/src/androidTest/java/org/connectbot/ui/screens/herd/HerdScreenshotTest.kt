@@ -54,6 +54,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.connectbot.transport.CommandOutput
 import org.connectbot.ui.components.NeedsYouKey
+import org.connectbot.ui.screens.chat.ASK_OPTION_TAG
 import org.connectbot.ui.screens.console.HerdrSwipeIntro
 import org.connectbot.ui.theme.ConnectBotTheme
 import org.connectbot.usage.UsageActions
@@ -272,8 +273,9 @@ class HerdScreenshotTest {
                         onChat = {},
                         onJump = {},
                         onAnswer = { _, _ -> },
+                        onPick = { _, _ -> },
                         onReply = { _, _ -> },
-                        readScreen = { "Run the migration on staging?\n> 1. Yes\n  2. No\n\nOpus  ~/src/api  main  ctx 68% (137k/200k)" },
+                        readScreen = { "Run the migration on staging?\n> 1. Yes\n  2. Yes, and run it on prod after\n  3. No\n\nOpus  ~/src/api  main  ctx 68% (137k/200k)" },
                         onRefresh = {},
                         onClose = {},
                     )
@@ -289,6 +291,8 @@ class HerdScreenshotTest {
         val header = composeTestRule.onNodeWithText("Needs you · 2", substring = true).fetchSemanticsNode().positionOnScreen.y
         assertTrue("first header top $header px is under the status bar ($statusBar px)", header >= statusBar)
         composeTestRule.onAllNodesWithText("Run the migration on staging?")[0].assertExists()
+        // claude's three options as keys; codex's stay text, with Approve and Deny.
+        composeTestRule.onAllNodesWithTag(ASK_OPTION_TAG).assertCountEquals(3)
         screencap("herd-board")
 
         composeTestRule.onNode(hasScrollAction()).performScrollToNode(hasText("Theme pass"))

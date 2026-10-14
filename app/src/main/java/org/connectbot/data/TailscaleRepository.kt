@@ -47,14 +47,17 @@ data class TailnetMachines(
 /**
  * Lists the machines on the user's Tailscale network without any Tailscale
  * credentials: it runs `tailscale status --json` over an SSH session Mercurio
- * already has open to a tailnet member. The last good answer is cached in
- * SharedPreferences so the list is there before any connection exists.
+ * already has open to a tailnet member. With no session open and a Tailscale
+ * OAuth client secret saved, it reads Tailscale's API instead ([TailscaleApi]).
+ * The last good answer is cached in SharedPreferences so the list is there
+ * before any connection exists.
  */
 @Singleton
 class TailscaleRepository @Inject constructor(
     private val prefs: SharedPreferences,
     private val hostRepository: HostRepository,
     private val dispatchers: CoroutineDispatchers,
+    private val api: TailscaleApi,
 ) {
     private val _machines = MutableStateFlow(TailnetMachines())
     val machines: StateFlow<TailnetMachines> = _machines.asStateFlow()
@@ -70,13 +73,15 @@ class TailscaleRepository @Inject constructor(
 
     /**
      * Re-read the tailnet over a connected SSH session, preferring [preferred]
-     * (the session on screen). Returns false when no SSH session is connected
-     * or the remote host could not answer; the cached list is kept then.
+     * (the session on screen), else over Tailscale's API when a secret is
+     * saved. Returns false when neither is there or the answer failed; the
+     * cached list is kept then.
      */
     suspend fun refresh(bridges: List<TerminalBridge>, preferred: TerminalBridge?): Boolean {
         val source = pickSource(bridges, preferred)
         val ssh = source?.transport as? SSH
         if (source == null || ssh == null) {
+            if (hasApiSecret()) return refreshFromApi()
             lastError = RefreshError(source?.host?.nickname, NO_SESSION)
             return false
         }
@@ -101,6 +106,32 @@ class TailscaleRepository @Inject constructor(
         }
     }
 
+    /** Re-read the tailnet over Tailscale's API. */
+    suspend fun refreshFromApi(): Boolean = withContext(dispatchers.io) {
+        try {
+            applyApiDevices(api.fetchDevices())
+            lastError = null
+            true
+        } catch (e: IOException) {
+            Timber.w(e, "Tailscale API device list failed")
+            lastError = RefreshError(API_SOURCE, DiagnosticsReport.describeFailure(e))
+            false
+        } catch (e: JSONException) {
+            Timber.w(e, "Tailscale API returned an unreadable device list")
+            lastError = RefreshError(API_SOURCE, "the device list was unreadable JSON: " + DiagnosticsReport.describeFailure(e))
+            false
+        }
+    }
+
+    /** True when a refresh has somewhere to read from: a connected SSH session or a saved API secret. */
+    suspend fun canRefresh(bridges: List<TerminalBridge>, preferred: TerminalBridge?): Boolean = pickSource(bridges, preferred) != null || hasApiSecret()
+
+    /** True when a Tailscale OAuth client secret is saved. */
+    suspend fun hasApiSecret(): Boolean = withContext(dispatchers.io) { api.isConfigured() }
+
+    /** Save the Tailscale OAuth client secret in the Keystore; blank clears it. */
+    suspend fun saveApiSecret(secret: String) = withContext(dispatchers.io) { api.setSecret(secret) }
+
     /** Why the last refresh failed, for a fix prompt: the host it ran on and the error. */
     data class RefreshError(val source: String?, val message: String)
 
@@ -116,9 +147,23 @@ class TailscaleRepository @Inject constructor(
      * @throws JSONException when [json] is not a status document.
      */
     fun applyStatus(json: String, sourceUsername: String, now: Long = System.currentTimeMillis()) {
-        val devices = TailscaleStatus.parse(json)
+        publish(TailscaleStatus.parse(json), json, FORMAT_STATUS, sourceUsername, now)
+    }
+
+    /**
+     * Parse an API device list, publish it and cache it. A bad answer never
+     * replaces a good cache.
+     *
+     * @throws JSONException when [json] is not a device list.
+     */
+    fun applyApiDevices(json: String, now: Long = System.currentTimeMillis()) {
+        publish(TailscaleStatus.parseApiDevices(json), json, FORMAT_API, "", now)
+    }
+
+    private fun publish(devices: List<TailscaleDevice>, json: String, format: String, sourceUsername: String, now: Long) {
         prefs.edit {
             putString(PREF_JSON, json)
+            putString(PREF_FORMAT, format)
             putLong(PREF_UPDATED, now)
             putString(PREF_USERNAME, sourceUsername)
         }
@@ -159,7 +204,11 @@ class TailscaleRepository @Inject constructor(
         val json = prefs.getString(PREF_JSON, null) ?: return TailnetMachines()
         return try {
             TailnetMachines(
-                devices = TailscaleStatus.parse(json),
+                devices = if (prefs.getString(PREF_FORMAT, null) == FORMAT_API) {
+                    TailscaleStatus.parseApiDevices(json)
+                } else {
+                    TailscaleStatus.parse(json)
+                },
                 updatedAt = prefs.getLong(PREF_UPDATED, 0L),
                 sourceUsername = prefs.getString(PREF_USERNAME, null).orEmpty(),
             )
@@ -173,7 +222,13 @@ class TailscaleRepository @Inject constructor(
         /** The refresh had no connected SSH session to run `tailscale status` on. */
         const val NO_SESSION = "No SSH session is connected, so there was no host to run `tailscale status` on."
 
+        /** The refresh source a fix prompt names when the API was asked. */
+        const val API_SOURCE = "api.tailscale.com"
+
         private const val PREF_JSON = "tailscaleStatusJson"
+        private const val PREF_FORMAT = "tailscaleStatusFormat"
+        private const val FORMAT_STATUS = "status"
+        private const val FORMAT_API = "api"
         private const val PREF_UPDATED = "tailscaleStatusUpdated"
         private const val PREF_USERNAME = "tailscaleStatusUsername"
         private const val EXEC_TIMEOUT_MS = 10_000L

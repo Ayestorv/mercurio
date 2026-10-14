@@ -170,6 +170,7 @@ fun ChatViewDialog(
             onRefresh = viewModel::refresh,
             onSend = { viewModel.send(host, it) },
             onAnswer = { viewModel.answer(host, it) },
+            onPick = { viewModel.answer(host, it) },
             onOpenReader = onOpenReader,
         )
     }
@@ -184,6 +185,8 @@ fun ChatContent(
     onRefresh: () -> Unit,
     onSend: (String) -> Unit,
     onAnswer: (HerdAnswer) -> Unit,
+    /** A tap on an option key of the ask: that option's keys. */
+    onPick: (String) -> Unit,
     onOpenReader: () -> Unit,
     modifier: Modifier = Modifier,
     /** The bars and keyboard to keep clear of: the dialog draws edge to edge, under the status bar. */
@@ -255,6 +258,7 @@ fun ChatContent(
                     ask = it,
                     state = state,
                     onAnswer = onAnswer,
+                    onPick = onPick,
                     onOpen = {
                         usage.log(UsageActions.CHAT_ASK)
                         it.item?.let { item -> scope.launch { listState.animateScrollToItem(lead + ChatRow.indexOf(chatRows, item)) } }
@@ -612,12 +616,12 @@ private fun ToolRun(calls: List<ChatItem>, onOpen: () -> Unit, onOpenCall: () ->
 }
 
 /**
- * The ask pinned under the header: a blocked agent's prompt with its options, Approve and
- * Deny; what a working agent is doing and for how long; the start of a quiet agent's last
+ * The ask pinned under the header: a blocked agent's prompt with a key per option where
+ * a tap picks it, else Approve and Deny; what a working agent is doing and for how long; the start of a quiet agent's last
  * reply. A tap scrolls the conversation to the turn it came from.
  */
 @Composable
-private fun AskCard(ask: ChatAsk, state: ChatUiState, onAnswer: (HerdAnswer) -> Unit, onOpen: () -> Unit) {
+private fun AskCard(ask: ChatAsk, state: ChatUiState, onAnswer: (HerdAnswer) -> Unit, onPick: (String) -> Unit, onOpen: () -> Unit) {
     val usage = LocalUsageLog.current
     val target = state.target ?: return
     val blocked = ask is ChatAsk.Blocked
@@ -637,13 +641,14 @@ private fun AskCard(ask: ChatAsk, state: ChatUiState, onAnswer: (HerdAnswer) -> 
                     MicroLabel(stringResource(R.string.chat_waiting), color = Ormus.extras.status.blocked)
                     val call = ask.item?.let { state.items.getOrNull(it) }?.takeIf { it.isTool }
                     call?.let { Text(it.line, fontFamily = OrmusMono, style = MaterialTheme.typography.bodySmall) }
-                    if (ask.question.isNotEmpty() && ask.question != call?.line) {
-                        Text(ask.question, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                    if (ask.question.isNotEmpty() && ask.question != call?.line) AskQuestion(ask.question)
+                    // An option key answers the prompt itself; Approve and Deny stay only without them.
+                    val keys = HerdApproval.optionKeys(target.agent, ask.options)
+                    AskOptions(ask.options, keys) { picked ->
+                        usage.log(UsageActions.CHAT_OPTION)
+                        onPick(picked)
                     }
-                    ask.options.forEach { option ->
-                        Text(option, fontFamily = OrmusMono, style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (target.agent in HerdApproval.PROVEN_KINDS) {
+                    if (keys == null && target.agent in HerdApproval.PROVEN_KINDS) {
                         Row(horizontalArrangement = Arrangement.spacedBy(Ormus.spacing.sm)) {
                             OrmusKey(
                                 label = stringResource(R.string.chat_approve),
@@ -737,6 +742,7 @@ private fun ProblemLine(problem: ChatProblem) {
 private fun AnswerLine(outcome: HerdAnswerOutcome) {
     val text = when (outcome) {
         HerdAnswerOutcome.NotBlocked -> stringResource(R.string.chat_not_blocked)
+        HerdAnswerOutcome.PromptChanged -> stringResource(R.string.board_answer_prompt_changed)
         is HerdAnswerOutcome.Failed -> stringResource(R.string.chat_answer_failed, outcome.reason)
         HerdAnswerOutcome.Sent -> return
     }
