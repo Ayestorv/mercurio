@@ -61,6 +61,7 @@ data class BoardCard(
         agent = agent,
         state = state,
         focused = false,
+        paneId = paneId,
     )
 }
 

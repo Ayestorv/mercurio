@@ -18,8 +18,9 @@
 package solutions.ormus.logos.herd
 
 /**
- * One tab on the Jump to list: where it lives ([session], workspace) and the agent in it
- * that most needs the user ([agent] kind and [state]; null kind for a tab without one).
+ * One pane on the Jump to list (one row per pane; a tab with one pane is one row): where it
+ * lives ([session], workspace, tab) and its agent ([agent] kind and [state]; null kind for a
+ * pane without one).
  */
 data class JumpTarget(
     val session: String,
@@ -32,34 +33,60 @@ data class JumpTarget(
     val state: HerdrAgentStatus,
     /** Herdr's focused tab in its session. */
     val focused: Boolean,
-)
+    /** The pane this row stands for, so a pick lands on it; null for a tab Herdr lists no pane of. */
+    val paneId: String? = null,
+    /** The pane's terminal title (an agent's is what it works on); empty when Herdr has none. */
+    val title: String = "",
+    /** The last part of the pane's working directory; empty when Herdr has none. */
+    val folder: String = "",
+) {
+    /** The title when the tab's label does not already carry it (Herdr's title sync puts it there). */
+    val titleLine: String? get() = title.takeIf { it.isNotBlank() && !tabLabel.contains(it) }
+}
 
 /**
- * The Jump to list: every tab of every running Herdr session, the ones that need the user
- * first, so a tab is one tap away without cycling through the others (Moshi's "Jump to").
+ * The Jump to list: every pane of every running Herdr session, the ones that need the user
+ * first, so a pane is one search away without cycling through the tabs (Moshi's "Jump to").
  */
 object HerdrJump {
     /**
-     * Every tab in [snapshots] (by session name): blocked first, then working, then done,
+     * Every pane in [snapshots] (by session name): blocked first, then working, then done,
      * then the rest; inside each, the default session first, then by session name,
-     * workspace number and tab number.
+     * workspace number, tab number and Herdr's pane order.
      */
     fun targets(snapshots: Map<String, HerdrSessionSnapshot>): List<JumpTarget> = snapshots.flatMap { (session, snapshot) ->
-        snapshot.tabs.map { tab ->
+        snapshot.tabs.flatMap { tab ->
             val workspace = snapshot.workspaces.firstOrNull { it.workspaceId == tab.workspaceId }
             val agents = snapshot.agents.filter { it.tabId == tab.tabId }
-            val state = HerdrWorkspacePicker.mostUrgent(agents.map { it.agentStatus } + tab.agentStatus)
-            JumpTarget(
+            val panes = snapshot.panes.filter { it.tabId == tab.tabId }
+            val tabState = HerdrWorkspacePicker.mostUrgent(agents.map { it.agentStatus } + tab.agentStatus)
+            val tabAgent = (agents.firstOrNull { it.agentStatus == tabState } ?: agents.firstOrNull())?.agent?.ifBlank { null }
+            fun target(pane: HerdrPaneInfo?, state: HerdrAgentStatus, agent: String?) = JumpTarget(
                 session = session,
                 tabId = tab.tabId,
                 tabLabel = tab.label,
                 tabNumber = tab.number,
                 workspaceLabel = workspace?.label.orEmpty(),
                 workspaceNumber = workspace?.number ?: 0,
-                agent = (agents.firstOrNull { it.agentStatus == state } ?: agents.firstOrNull())?.agent?.ifBlank { null },
+                agent = agent,
                 state = state,
                 focused = tab.tabId == snapshot.focusedTabId,
+                paneId = pane?.paneId,
+                title = (pane?.terminalTitleStripped ?: pane?.terminalTitle).orEmpty(),
+                folder = pane?.cwd?.trimEnd('/')?.substringAfterLast('/').orEmpty(),
             )
+            when {
+                panes.isEmpty() -> listOf(target(null, tabState, tabAgent))
+
+                // One pane, the usual tab: the tab's own agent and state, as before.
+                panes.size == 1 -> listOf(target(panes.single(), tabState, tabAgent))
+
+                // A split tab: one row per pane, each with its own agent and state.
+                else -> panes.map { pane ->
+                    val agent = agents.firstOrNull { it.paneId == pane.paneId }
+                    target(pane, agent?.agentStatus ?: pane.agentStatus, (agent?.agent ?: pane.agent)?.ifBlank { null })
+                }
+            }
         }
     }.sortedWith(
         compareBy<JumpTarget> { urgency(it.state) }
@@ -69,12 +96,12 @@ object HerdrJump {
             .thenBy { it.tabNumber },
     )
 
-    /** The [targets] matching every word of [query] in their tab, workspace, session or agent, ignoring case. */
+    /** The [targets] matching every word of [query] in their title, folder, tab, workspace, session or agent, ignoring case. */
     fun filter(targets: List<JumpTarget>, query: String): List<JumpTarget> {
         val words = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
         if (words.isEmpty()) return targets
         return targets.filter { target ->
-            val text = listOfNotNull(target.tabLabel, target.workspaceLabel, target.session, target.agent).joinToString(" ").lowercase()
+            val text = listOfNotNull(target.title, target.folder, target.tabLabel, target.workspaceLabel, target.session, target.agent).joinToString(" ").lowercase()
             words.all { it in text }
         }
     }

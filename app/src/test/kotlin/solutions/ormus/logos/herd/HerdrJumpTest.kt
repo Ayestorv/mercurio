@@ -54,6 +54,9 @@ class HerdrJumpTest {
         assertEquals("~Demo", blocked.workspaceLabel)
         assertEquals("default", blocked.session)
         assertFalse(blocked.focused)
+        assertEquals("w1:pC", blocked.paneId)
+        assertEquals("Lint setup, two config files for the CI - grok", blocked.title)
+        assertEquals("alice", blocked.folder)
         val shell = targets.single { it.session == "default" && it.tabId == "w1:t1" }
         assertNull("a tab without an agent", shell.agent)
         assertTrue(shell.focused)
@@ -61,12 +64,29 @@ class HerdrJumpTest {
     }
 
     @Test
-    fun filter_everyWordInTheTabWorkspaceSessionOrAgent_ignoringCase() {
+    fun filter_everyWordInTheTitleFolderTabWorkspaceSessionOrAgent_ignoringCase() {
         assertEquals(targets, HerdrJump.filter(targets, "  "))
         assertEquals(listOf("TMPTAB", "BETATAB", "GAMMATAB"), HerdrJump.filter(targets, "WORK").map { it.tabLabel })
         assertEquals(listOf("GAMMATAB"), HerdrJump.filter(targets, "work gam").map { it.tabLabel })
         assertEquals(6, HerdrJump.filter(targets, "grok").size)
+        // The pane's title (what the agent works on) and its folder, which the tab label lacks here.
+        assertEquals(listOf("w1:pC"), HerdrJump.filter(targets, "lint CI").map { it.paneId })
+        assertEquals(listOf("w1:pJ"), HerdrJump.filter(targets, "flaky").map { it.paneId })
+        assertEquals(3, HerdrJump.filter(targets, "tmp").size)
         assertEquals(emptyList<JumpTarget>(), HerdrJump.filter(targets, "nothing-like-it"))
+    }
+
+    @Test
+    fun targets_aSplitTabIsOneRowPerPane_eachWithItsOwnAgentAndState() {
+        val snapshot = snapshot("snapshot-sun-mixed.json")
+        val second = snapshot.panes.single { it.paneId == "w1:pF" }.copy(paneId = "w1:pF2", tabId = "w1:tC", agent = "claude", agentStatus = HerdrAgentStatus.WORKING, terminalTitle = "Second pane", terminalTitleStripped = "Second pane", focused = false)
+        val split = HerdrJump.targets(mapOf("default" to snapshot.copy(panes = snapshot.panes + second)))
+        assertEquals(13, split.size)
+        val rows = split.filter { it.tabId == "w1:tC" }
+        assertEquals(listOf("w1:pC", "w1:pF2"), rows.map { it.paneId })
+        assertEquals(listOf("grok" to HerdrAgentStatus.BLOCKED, "claude" to HerdrAgentStatus.WORKING), rows.map { it.agent to it.state })
+        assertEquals("Second pane", rows[1].titleLine)
+        assertNull("the label already carries the title", split.single { it.paneId == "w1:pC" }.copy(tabLabel = "3 · Lint setup, two config files for the CI - grok").titleLine)
     }
 
     @Test

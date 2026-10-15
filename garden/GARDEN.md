@@ -1,10 +1,10 @@
 # Garden: Mercurio
 
-As of 2026-10-13.
+As of 2026-10-14.
 
 ## Plot
 
-- Copy: repo clone at 7808c4a9 (.)
+- Copy: repo clone at 6de242a2 (.)
 - Planted: 0 skills (0 principles), 0 commands, 0 guide pages
 
 ## Beds
@@ -16,18 +16,18 @@ As of 2026-10-13.
 
 ## Waiting for review
 
-- PR #150 docs(pantry): name no AVD in the pantry README (pantry/scrub-readme-avd)
+- none
 
 ## Weeds
 
 - No gardener PR open
-- Weed pulls in history: 4 (last: 500dae90 2026-10-12 chore(garden): name Herdr, not tmux, in the intent doc (#144))
+- Weed pulls in history: 5 (last: 0fc1c0c6 2026-10-13 chore(garden): garden report 2026-10-13 (#164))
 - Checks planted: 152 commits touched scripts/check.sh or .github/workflows (last: 4272bb6a 2026-10-04 chore(ci): remove hosted CI; the local gate is the gate (#64))
 - Weed kinds in WEEDS.md: 4, 3 with a check
 
 ## Soil
 
-- This clone: 7808c4a, current
+- This clone: 6de242a, current
 
 ## Water
 

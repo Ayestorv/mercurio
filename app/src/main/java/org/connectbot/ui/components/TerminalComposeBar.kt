@@ -861,7 +861,8 @@ fun TerminalComposeBar(
                         onPick = { target ->
                             usage.log(UsageActions.HERDR_JUMP_PICK)
                             herdrJumpOpen = false
-                            bridge.jumpToHerdrTab(target)?.let { why -> Toast.makeText(context, why, Toast.LENGTH_LONG).show() }
+                            // The row's pane too, when an agent runs in it (Herdr focuses agents by pane id).
+                            bridge.jumpToHerdrTab(target, target.paneId?.takeIf { target.agent != null })?.let { why -> Toast.makeText(context, why, Toast.LENGTH_LONG).show() }
                         },
                     )
                 }
@@ -906,13 +907,17 @@ fun TerminalComposeBar(
                         description = stringResource(R.string.herdr_key_page_down),
                     )
                     // On every host. Dimmed, not hidden, until Herdr answers, so the row never
-                    // shifts under the thumb. Gold-tinted while the panel is open.
+                    // shifts under the thumb. Gold-tinted while the panel is open. Held, it opens
+                    // the pane search (Jump to) with the keyboard up: the panel's own Jump to key
+                    // was never tapped in 5,000 console actions, so the search gets a gesture here.
                     OrmusKey(
                         label = stringResource(R.string.herdr_key_commands),
                         onClick = { toggleHerdrPanel() },
                         modifier = Modifier.weight(1.4f),
                         tone = if (herdrPanel) KeyTone.ACCENT else KeyTone.PLAIN,
                         enabled = herdrSession && onHerdrPanelChange != null,
+                        description = stringResource(R.string.herdr_key_commands_description),
+                        onLongClick = { openHerdrJump(UsageActions.HERDR_JUMP_KEY) },
                     )
                     MoreKey(
                         open = trayOpen,

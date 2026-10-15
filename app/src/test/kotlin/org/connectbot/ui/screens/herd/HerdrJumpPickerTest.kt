@@ -20,6 +20,7 @@ package org.connectbot.ui.screens.herd
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
@@ -78,6 +79,18 @@ class HerdrJumpPickerTest {
         rows()[0].performClick()
 
         assertEquals(listOf("work" to "w3:t1"), picked.map { it.session to it.tabId })
+        assertEquals(listOf("w3:p1"), picked.map { it.paneId })
+    }
+
+    @Test
+    fun search_opensWithTheKeyboardOnTheField_andFindsAPaneByItsTitle() {
+        show()
+
+        composeTestRule.onNodeWithTag(HERDR_JUMP_SEARCH_TAG).assertIsFocused()
+        composeTestRule.onNodeWithTag(HERDR_JUMP_SEARCH_TAG).performTextInput("flaky")
+        composeTestRule.waitForIdle()
+        rows().assertCountEquals(1)
+        composeTestRule.onNodeWithText("Three flaky tests in the parser suite wi… - grok").assertIsDisplayed()
     }
 
     @Test
@@ -87,6 +100,6 @@ class HerdrJumpPickerTest {
         composeTestRule.onNodeWithTag(HERDR_JUMP_SEARCH_TAG).performTextInput("nothing-like-it")
         composeTestRule.waitForIdle()
         rows().assertCountEquals(0)
-        composeTestRule.onNodeWithText("No tab matches").assertIsDisplayed()
+        composeTestRule.onNodeWithText("No pane matches").assertIsDisplayed()
     }
 }

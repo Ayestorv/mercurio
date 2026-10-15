@@ -1087,6 +1087,8 @@
 
 	<!-- Herdr control row: key that opens the sheet with every Herdr command (keep very short; Herdr is a product name) -->
 	<string name="herdr_key_commands">Herdr</string>
+	<!-- Compose bar: what the Herdr key does, for a screen reader; a tap opens the command panel, a long press the pane search -->
+	<string name="herdr_key_commands_description">Herdr commands. Hold to search every pane.</string>
 	<!-- Compose bar: content description of the ⋯ key that opens or closes the tray of less used keys -->
 	<string name="compose_bar_more_keys">More keys</string>
 	<!-- Compose bar tray: short label of the key that pastes the phone's latest screenshot into the field (keep very short) -->
@@ -1227,12 +1229,12 @@
 	<string name="herdr_direction_down">down</string>
 	<!-- Herdr command sheet: label before the row of Herdr sessions running on the host; the panel acts on the one picked -->
 	<string name="herdr_session_label">Session</string>
-	<!-- Herdr Jump to: the key that opens the list of every tab in every Herdr session -->
+	<!-- Herdr Jump to: the key that opens the list of every pane in every Herdr session -->
 	<string name="herdr_jump_open">Jump to…</string>
-	<!-- Herdr Jump to: placeholder of the search field above the list of tabs -->
-	<string name="herdr_jump_search">Search tabs, workspaces, agents</string>
-	<!-- Herdr Jump to: shown when no tab matches the search -->
-	<string name="herdr_jump_none">No tab matches</string>
+	<!-- Herdr Jump to: placeholder of the search field above the list of panes -->
+	<string name="herdr_jump_search">Search panes: title, agent, folder, tab, workspace</string>
+	<!-- Herdr Jump to: shown when no pane matches the search -->
+	<string name="herdr_jump_none">No pane matches</string>
 	<!-- Herdr Jump to: where a tab lives under its name; %1$s is the workspace, %2$s the Herdr session -->
 	<string name="herdr_jump_place">%1$s · %2$s</string>
 	<!-- Herdr Jump to: the tab was focused in another Herdr session, but the terminal cannot switch to it because the post-login command runs exec herdr; %1$s is the session -->

@@ -177,6 +177,7 @@ herdr-sheet:retry
 herdr-sheet:tab-key
 herdr-sheet:session
 herdr-jump:open
+herdr-jump:key
 herdr-jump:pick
 needs-you:jump
 needs-you:board

@@ -251,6 +251,9 @@ object UsageActions {
 
     // Jump to: opened from the Herdr panel's Tabs group; a tab picked.
     const val HERDR_JUMP_OPEN = "herdr-jump:open"
+
+    /** Jump to opened by holding the Herdr key (the panel's key logs [HERDR_JUMP_OPEN]). */
+    const val HERDR_JUMP_KEY = "herdr-jump:key"
     const val HERDR_JUMP_PICK = "herdr-jump:pick"
 
     // The compose bar's Needs you key: a tap jumps to the next agent waiting for the user;
@@ -402,7 +405,7 @@ object UsageActions {
         HERDR_SHEET_RELOAD_CONFIG, HERDR_SHEET_HELP, HERDR_SHEET_STOP_SESSION,
         HERDR_SHEET_SIDEBAR, HERDR_SHEET_NAVIGATE_WORKSPACES, HERDR_SHEET_FIX_PROMPT, HERDR_SHEET_RETRY,
         HERDR_SHEET_TAB_KEY, HERDR_SHEET_SESSION,
-        HERDR_JUMP_OPEN, HERDR_JUMP_PICK, NEEDS_YOU_JUMP, NEEDS_YOU_BOARD, HERDR_SWIPE_INTRO_DISMISS,
+        HERDR_JUMP_OPEN, HERDR_JUMP_KEY, HERDR_JUMP_PICK, NEEDS_YOU_JUMP, NEEDS_YOU_BOARD, HERDR_SWIPE_INTRO_DISMISS,
         BOARD_OPEN, BOARD_CHAT, BOARD_JUMP, BOARD_MORE, BOARD_APPROVE, BOARD_DENY, BOARD_REPLY, BOARD_REFRESH, BOARD_CLOSE, BOARD_OPTION,
         HERDR_SHEET_KEY_MENU, HERDR_SHEET_KEY_HIDE, HERDR_SHEET_KEY_EDIT, HERDR_SHEET_KEY_ADD,
         HERDR_SHEET_KEY_REMOVE, HERDR_SHEET_RESTORE,

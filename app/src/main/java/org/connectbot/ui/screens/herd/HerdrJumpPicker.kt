@@ -39,6 +39,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,9 +73,10 @@ const val HERDR_JUMP_LIST_TAG = "herdr_jump_list"
 private val JUMP_LIST_MAX_HEIGHT = 300.dp
 
 /**
- * Jump to: every tab of every running Herdr session, the ones that need the user first,
- * with a search field on top. Opening it lists the sessions and fetches each one's snapshot
- * again; a tap hands the tab to [onPick].
+ * Jump to: every pane of every running Herdr session, the ones that need the user first,
+ * with a search field on top that takes the keyboard as it opens, so the first thing typed
+ * narrows the list. Opening it lists the sessions and fetches each one's snapshot again; a
+ * tap hands the pane to [onPick].
  */
 @Composable
 fun HerdrJumpPicker(session: HerdSession, onPick: (JumpTarget) -> Unit, modifier: Modifier = Modifier) {
@@ -92,6 +95,8 @@ fun HerdrJumpPicker(session: HerdSession, onPick: (JumpTarget) -> Unit, modifier
 fun HerdrJumpContent(targets: List<JumpTarget>, onPick: (JumpTarget) -> Unit, modifier: Modifier = Modifier) {
     var query by rememberSaveable { mutableStateOf("") }
     val shown = remember(targets, query) { HerdrJump.filter(targets, query) }
+    val searchFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { searchFocus.requestFocus() }
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -107,6 +112,7 @@ fun HerdrJumpContent(targets: List<JumpTarget>, onPick: (JumpTarget) -> Unit, mo
             textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = OrmusMono),
             modifier = Modifier
                 .fillMaxWidth()
+                .focusRequester(searchFocus)
                 .testTag(HERDR_JUMP_SEARCH_TAG),
         )
         if (shown.isEmpty()) {
@@ -119,12 +125,12 @@ fun HerdrJumpContent(targets: List<JumpTarget>, onPick: (JumpTarget) -> Unit, mo
                 .testTag(HERDR_JUMP_LIST_TAG),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            items(shown, key = { "${it.session}/${it.tabId}" }) { target -> JumpRow(target) { onPick(target) } }
+            items(shown, key = { "${it.session}/${it.tabId}/${it.paneId}" }) { target -> JumpRow(target) { onPick(target) } }
         }
     }
 }
 
-/** One tab: its name, then its workspace and session, and its agent's kind and state on the right. */
+/** One pane: its tab's name, its title when the name lacks it, then its workspace and session, and its agent's kind and state on the right. */
 @Composable
 private fun JumpRow(target: JumpTarget, onClick: () -> Unit) {
     Button(
@@ -145,6 +151,15 @@ private fun JumpRow(target: JumpTarget, onClick: () -> Unit) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                target.titleLine?.let { title ->
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = OrmusMono,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
                     stringResource(R.string.herdr_jump_place, target.workspaceLabel.ifBlank { target.workspaceNumber.toString() }, target.session),
                     style = MaterialTheme.typography.labelSmall,
