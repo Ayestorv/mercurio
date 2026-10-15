@@ -261,6 +261,9 @@ object UsageActions {
     const val NEEDS_YOU_JUMP = "needs-you:jump"
     const val NEEDS_YOU_BOARD = "needs-you:board"
 
+    /** The compose bar's Chat key: the focused pane as a chat (the console then logs [CHAT_OPEN] or opens the reader). */
+    const val CHAT_KEY = "chat:key"
+
     // Agents board: opened from the Herdr panel; a card tapped (chat, or jump for an agent
     // without one), long-pressed (jump), opened to its screen, answered, replied to; refreshed, closed;
     // an option key of the ask tapped (never which option).
@@ -405,7 +408,7 @@ object UsageActions {
         HERDR_SHEET_RELOAD_CONFIG, HERDR_SHEET_HELP, HERDR_SHEET_STOP_SESSION,
         HERDR_SHEET_SIDEBAR, HERDR_SHEET_NAVIGATE_WORKSPACES, HERDR_SHEET_FIX_PROMPT, HERDR_SHEET_RETRY,
         HERDR_SHEET_TAB_KEY, HERDR_SHEET_SESSION,
-        HERDR_JUMP_OPEN, HERDR_JUMP_KEY, HERDR_JUMP_PICK, NEEDS_YOU_JUMP, NEEDS_YOU_BOARD, HERDR_SWIPE_INTRO_DISMISS,
+        HERDR_JUMP_OPEN, HERDR_JUMP_KEY, HERDR_JUMP_PICK, NEEDS_YOU_JUMP, NEEDS_YOU_BOARD, CHAT_KEY, HERDR_SWIPE_INTRO_DISMISS,
         BOARD_OPEN, BOARD_CHAT, BOARD_JUMP, BOARD_MORE, BOARD_APPROVE, BOARD_DENY, BOARD_REPLY, BOARD_REFRESH, BOARD_CLOSE, BOARD_OPTION,
         HERDR_SHEET_KEY_MENU, HERDR_SHEET_KEY_HIDE, HERDR_SHEET_KEY_EDIT, HERDR_SHEET_KEY_ADD,
         HERDR_SHEET_KEY_REMOVE, HERDR_SHEET_RESTORE,

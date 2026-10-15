@@ -280,7 +280,7 @@ class TerminalComposeBarTest {
     fun herdrHost_row1_pageKeysMoreThenNeedsYou() {
         setBar(bridgeWithPostLogin("herdr\n"), herdrPanel = true, onSlashMenu = {})
 
-        assertRowOrder("↑", "↓", "Herdr", MORE, NEEDS_YOU)
+        assertRowOrder("↑", "↓", "Herdr", MORE, CHAT, NEEDS_YOU)
         // The tab arrows are gone: swipes switch tabs, Jump to sits in the Herdr panel.
         composeTestRule.onAllNodesWithContentDescription("Previous tab").assertCountEquals0()
         composeTestRule.onAllNodesWithContentDescription("Next tab").assertCountEquals0()
@@ -300,8 +300,9 @@ class TerminalComposeBarTest {
         setBar(bridgeWithPostLogin(null), herdrPanel = true)
 
         // The same row as on Sun; the Herdr keys wait, dimmed, for Herdr to answer.
-        assertRowOrder("↑", "↓", "Herdr", MORE, NEEDS_YOU)
+        assertRowOrder("↑", "↓", "Herdr", MORE, CHAT, NEEDS_YOU)
         key("Herdr").assertIsNotEnabled()
+        key(CHAT).assertIsNotEnabled()
         key(NEEDS_YOU).assertIsNotEnabled()
         // Ctrl lives in the tray on every host.
         composeTestRule.onAllNodesWithText("Ctrl").assertCountEquals0()
@@ -344,6 +345,28 @@ class TerminalComposeBarTest {
         val enter = key(ENTER).fetchSemanticsNode().boundsInRoot
         assertTrue("Needs you is above ⏎", needsYou.bottom <= enter.top + 0.5f)
         assertTrue("Needs you lines up over ⏎", needsYou.right > enter.left && needsYou.left < enter.right)
+    }
+
+    @Test
+    fun chat_tap_readsTheFocusedPane_andLogsTheKey() {
+        // The console's onRead shows an agent pane as Chat View and any other pane as its reader.
+        var reads = 0
+        setBar(herdrBridgeWithWaitingAgents(), onRead = { reads++ }, onBoard = {})
+
+        key(CHAT).assertIsEnabled().assertTextEquals("Chat")
+        assertComfortable(CHAT)
+        key(CHAT).performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals(1, reads)
+        assertEquals(listOf(UsageActions.CHAT_KEY), logged)
+    }
+
+    @Test
+    fun chat_withNothingToRead_isDimmed() {
+        setBar(herdrBridgeWithWaitingAgents(), onBoard = {})
+
+        key(CHAT).assertIsNotEnabled()
     }
 
     @Test
@@ -515,7 +538,7 @@ class TerminalComposeBarTest {
         setBar(bridgeWithPostLogin("herdr\n"))
 
         key("Herdr").assertIsNotEnabled()
-        assertRowOrder("↑", "↓", "Herdr", MORE, NEEDS_YOU)
+        assertRowOrder("↑", "↓", "Herdr", MORE, CHAT, NEEDS_YOU)
         assertComfortable("Herdr")
     }
 
@@ -889,6 +912,7 @@ class TerminalComposeBarTest {
         const val PASTE = "Paste latest screenshot"
         val PHONE_WIDTH = 411.dp
         const val NEEDS_YOU = "Needs you"
+        const val CHAT = "Chat"
 
         // Stands in for Mockito's matchers, which return null for Kotlin's non-null parameters.
         val JUMP = JumpTarget("", "", "", 0, "", 0, null, HerdrAgentStatus.UNKNOWN, false)

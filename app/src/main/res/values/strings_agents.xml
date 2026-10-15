@@ -11,6 +11,10 @@
 	<string name="needs_you_key_count">Needs you · %1$d</string>
 	<!-- Compose bar, row 1: what a screen reader says for the key; %1$d is how many agents wait (0 or more) -->
 	<string name="needs_you_key_description">Needs you, %1$d waiting</string>
+	<!-- Compose bar, row 1: the key that shows the pane under the thumb as a chat (an agent pane opens Chat View, any other pane its output reader) -->
+	<string name="chat_key">Chat</string>
+	<!-- Compose bar, row 1: what a screen reader says for the Chat key -->
+	<string name="chat_key_description">Chat view of this pane</string>
 	<!-- Agents board: title -->
 	<string name="board_title">Agents</string>
 	<!-- Agents board: content description of the back button -->

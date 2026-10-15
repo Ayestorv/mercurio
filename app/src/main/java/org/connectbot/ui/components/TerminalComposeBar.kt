@@ -393,7 +393,7 @@ private fun ReadKey(
  * Herdr: its post-login command launches it, or a Herdr snapshot answers on the host.
  *
  * Two rows, always visible:
- * 1. ↑ and ↓, which page (Page Up and Page Down, hold to repeat), Herdr, ⋯, then Needs you
+ * 1. ↑ and ↓, which page (Page Up and Page Down, hold to repeat), Herdr, ⋯, Chat, then Needs you
  *    above ⏎: a tap jumps to the next agent waiting for the user, in any Herdr session on
  *    the host, cycling; with none waiting, or on a long press, it opens the Agents board
  *    ([onBoard]). Gold while an agent waits.
@@ -883,7 +883,7 @@ fun TerminalComposeBar(
                     .padding(horizontal = Ormus.spacing.sm, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                // Row 1: the page keys, Herdr, ⋯, then Needs you above ⏎.
+                // Row 1: the page keys, Herdr, ⋯, Chat, then Needs you above ⏎.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(KEY_GAP),
@@ -913,7 +913,7 @@ fun TerminalComposeBar(
                     OrmusKey(
                         label = stringResource(R.string.herdr_key_commands),
                         onClick = { toggleHerdrPanel() },
-                        modifier = Modifier.weight(1.4f),
+                        modifier = Modifier.weight(1.2f),
                         tone = if (herdrPanel) KeyTone.ACCENT else KeyTone.PLAIN,
                         enabled = herdrSession && onHerdrPanelChange != null,
                         description = stringResource(R.string.herdr_key_commands_description),
@@ -923,6 +923,21 @@ fun TerminalComposeBar(
                         open = trayOpen,
                         onClick = { if (trayOpen) closeTray() else openTray(UsageActions.BAR_TRAY_OPEN) },
                         modifier = Modifier.weight(1f),
+                    )
+                    // Chat: the pane under the thumb as a conversation (an agent pane opens Chat
+                    // View on it; any other pane its output reader), one tap from Needs you. Chat
+                    // View was reached only through the Agents board before (board:chat 16,
+                    // chat:open 0 in about 5,000 console actions). Dimmed, like Herdr, until the
+                    // session runs Herdr, so the row never shifts.
+                    OrmusKey(
+                        label = stringResource(R.string.chat_key),
+                        onClick = {
+                            usage.log(UsageActions.CHAT_KEY)
+                            onRead?.invoke()
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = herdrSession && onRead != null,
+                        description = stringResource(R.string.chat_key_description),
                     )
                     // Where the tab arrows were: swipes switch tabs now. Dimmed, like Herdr,
                     // until the session runs Herdr, so the row never shifts.

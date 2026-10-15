@@ -181,6 +181,7 @@ herdr-jump:key
 herdr-jump:pick
 needs-you:jump
 needs-you:board
+chat:key
 herdr-swipe-intro:dismiss
 board:open
 board:chat
