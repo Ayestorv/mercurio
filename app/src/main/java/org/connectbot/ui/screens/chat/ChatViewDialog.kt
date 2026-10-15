@@ -19,6 +19,7 @@ package org.connectbot.ui.screens.chat
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -69,6 +70,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -101,11 +103,14 @@ import org.connectbot.ui.theme.OrmusMono
 import org.connectbot.usage.LocalUsageLog
 import org.connectbot.usage.UsageActions
 import solutions.ormus.logos.herd.AgentsBoard
+import solutions.ormus.logos.herd.BoardCard
 import solutions.ormus.logos.herd.HerdAnswer
 import solutions.ormus.logos.herd.HerdAnswerOutcome
 import solutions.ormus.logos.herd.HerdApproval
 import solutions.ormus.logos.herd.HerdrAgentStatus
 import solutions.ormus.logos.herd.HerdrCommands
+import solutions.ormus.logos.herd.HerdrSessions
+import kotlin.math.abs
 
 /** Test tags on the chat's parts. */
 const val CHAT_LIST_TAG = "chat_list"
@@ -117,6 +122,9 @@ const val CHAT_TURN_TAG = "chat_turn"
 const val CHAT_REPLY_TAG = "chat_reply"
 const val CHAT_WAITING_TAG = "chat_waiting"
 const val CHAT_ASK_TAG = "chat_ask"
+
+/** Test tag on the strip of agent chips under the header, one per active agent. */
+const val CHAT_SCAN_TAG = "chat_scan"
 
 /** Full screen, drawn edge to edge: [ChatContent] keeps its own parts clear of the bars. */
 internal val CHAT_DIALOG_PROPERTIES = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -149,6 +157,10 @@ fun ChatViewDialog(
     session: String = HerdrCommands.DEFAULT_SESSION,
     /** The pane to open on instead of the focused one (an Agents board card). */
     pane: String? = null,
+    /** Every active agent, in the Agents board's order, for the strip and the swipe between conversations. */
+    agents: List<BoardCard> = emptyList(),
+    /** Another agent chosen in the strip or by a swipe: the caller moves the chat to its session and pane. */
+    onSwitch: ((BoardCard) -> Unit)? = null,
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
     val host = remember(bridge, session) { BridgeChatHost(bridge, session) }
@@ -172,6 +184,10 @@ fun ChatViewDialog(
             onAnswer = { viewModel.answer(host, it) },
             onPick = { viewModel.answer(host, it) },
             onOpenReader = onOpenReader,
+            agents = agents,
+            currentSession = session,
+            currentPane = state.target?.paneId ?: pane,
+            onSwitch = onSwitch,
         )
     }
 }
@@ -191,8 +207,16 @@ fun ChatContent(
     modifier: Modifier = Modifier,
     /** The bars and keyboard to keep clear of: the dialog draws edge to edge, under the status bar. */
     windowInsets: WindowInsets = WindowInsets.safeDrawing,
+    /** Every active agent, for the strip under the header; the strip shows only when there are two or more. */
+    agents: List<BoardCard> = emptyList(),
+    currentSession: String = HerdrCommands.DEFAULT_SESSION,
+    currentPane: String? = null,
+    /** Another agent chosen: a tap on its chip, or a swipe across the transcript to the next or previous one. */
+    onSwitch: ((BoardCard) -> Unit)? = null,
 ) {
     val usage = LocalUsageLog.current
+    val density = LocalDensity.current
+    val swipeThreshold = with(density) { SWIPE_PANE_THRESHOLD.toPx() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val ask = remember(state.target?.status, state.items, state.screen) { state.ask }
@@ -267,6 +291,17 @@ fun ChatContent(
             }
             // While the agent waits, the reply goes right under its question.
             if (state.blocked) replyBar()
+            if (agents.size > 1 && onSwitch != null) {
+                AgentStrip(
+                    agents = agents,
+                    currentSession = currentSession,
+                    currentPane = currentPane,
+                    onPick = { card ->
+                        usage.log(UsageActions.CHAT_PANE)
+                        onSwitch(card)
+                    },
+                )
+            }
             state.problem?.let { problem -> ProblemLine(problem) }
             state.answer?.let { outcome -> AnswerLine(outcome) }
             state.unsent?.let { unsent -> UnsentLine(unsent) }
@@ -286,7 +321,26 @@ fun ChatContent(
                     verticalArrangement = Arrangement.spacedBy(Ormus.spacing.sm),
                     modifier = Modifier
                         .fillMaxSize()
-                        .testTag(CHAT_LIST_TAG),
+                        .testTag(CHAT_LIST_TAG)
+                        // A swipe across the transcript moves to the next (left) or previous
+                        // (right) agent; a vertical scroll is untouched.
+                        .pointerInput(agents, currentSession, currentPane, onSwitch) {
+                            if (onSwitch == null || agents.size < 2) return@pointerInput
+                            var travelled = 0f
+                            detectHorizontalDragGestures(
+                                onDragStart = { travelled = 0f },
+                                onHorizontalDrag = { _, dx -> travelled += dx },
+                                onDragEnd = {
+                                    if (abs(travelled) >= swipeThreshold) {
+                                        val step = if (travelled < 0) 1 else -1
+                                        AgentsBoard.neighbor(agents, currentSession, currentPane, step)?.let { card ->
+                                            usage.log(UsageActions.CHAT_SWIPE_PANE)
+                                            onSwitch(card)
+                                        }
+                                    }
+                                },
+                            )
+                        },
                 ) {
                     if (state.truncated) {
                         item { MicroLabel(stringResource(R.string.chat_earlier)) }
@@ -314,6 +368,42 @@ fun ChatContent(
                 }
             }
             if (!state.blocked) replyBar()
+        }
+    }
+}
+
+/** How far a finger travels across the transcript before it counts as a move to the next agent. */
+private val SWIPE_PANE_THRESHOLD = 72.dp
+
+/**
+ * One chip per active agent, in the board's order, the one on screen gold and the rest ghost;
+ * the agent's kind and tab number, with the session when it is not the default. The chip's
+ * description is the agent's title, what it is working on.
+ */
+@Composable
+private fun AgentStrip(agents: List<BoardCard>, currentSession: String, currentPane: String?, onPick: (BoardCard) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = Ormus.spacing.sm, vertical = Ormus.spacing.xs)
+            .testTag(CHAT_SCAN_TAG),
+        horizontalArrangement = Arrangement.spacedBy(Ormus.spacing.xs),
+    ) {
+        agents.forEach { card ->
+            val current = card.session == currentSession && card.paneId == currentPane
+            val kind = card.agent ?: stringResource(R.string.chat_scan_agent)
+            OrmusKey(
+                label = if (HerdrSessions.isDefault(card.session)) {
+                    stringResource(R.string.chat_scan_chip, kind, card.tabNumber)
+                } else {
+                    stringResource(R.string.chat_scan_chip_session, kind, card.session, card.tabNumber)
+                },
+                onClick = { if (!current) onPick(card) },
+                tone = if (current) KeyTone.ACCENT else KeyTone.PLAIN,
+                description = card.title ?: card.tabLabel,
+                contentPadding = WORD_KEY_PADDING,
+            )
         }
     }
 }

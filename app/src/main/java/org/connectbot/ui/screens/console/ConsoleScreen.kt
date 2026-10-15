@@ -182,6 +182,7 @@ import org.connectbot.ui.screens.devtools.FilesDialog
 import org.connectbot.ui.screens.devtools.PreviewDialog
 import org.connectbot.ui.screens.herd.AgentsBoardDialog
 import org.connectbot.ui.screens.herd.HerdDialog
+import org.connectbot.ui.screens.herd.boardSnapshots
 import org.connectbot.ui.screens.herd.herdrActionLabel
 import org.connectbot.ui.screens.reader.OutputReaderDialog
 import org.connectbot.ui.theme.Ormus
@@ -197,6 +198,7 @@ import org.connectbot.util.loadLatestScreenshot
 import org.connectbot.util.rememberTerminalTypefaceResultFromStoredValue
 import solutions.ormus.logos.commands.PaletteScreen
 import solutions.ormus.logos.commands.SlashCommand
+import solutions.ormus.logos.herd.AgentsBoard
 import solutions.ormus.logos.herd.Herd
 import solutions.ormus.logos.herd.HerdResult
 import solutions.ormus.logos.herd.HerdrAction
@@ -1253,6 +1255,11 @@ fun ConsoleScreen(
             }
 
             chatBridge?.let { bridge ->
+                // Every active agent of every session, so the chat can move between conversations.
+                val chatPrimary = bridge.herd?.snapshot?.collectAsState()?.value
+                val chatOthers = bridge.herd?.others?.collectAsState()?.value ?: emptyMap()
+                val chatSessions = bridge.herd?.sessions?.collectAsState()?.value ?: emptyList()
+                val chatAgents = remember(chatPrimary, chatOthers, chatSessions) { AgentsBoard.cards(boardSnapshots(chatPrimary, chatOthers, chatSessions)) }
                 ChatViewDialog(
                     bridge = bridge,
                     session = chatSession,
@@ -1261,6 +1268,11 @@ fun ConsoleScreen(
                     onOpenReader = {
                         chatBridge = null
                         showOutputReader = true
+                    },
+                    agents = chatAgents,
+                    onSwitch = { card ->
+                        chatSession = card.session
+                        chatPane = card.paneId
                     },
                 )
             }

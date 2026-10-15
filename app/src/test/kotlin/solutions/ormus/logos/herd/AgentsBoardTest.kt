@@ -146,6 +146,20 @@ class AgentsBoardTest {
     }
 
     @Test
+    fun neighbor_stepsThroughTheCardsInOrder_andStopsAtTheEnds() {
+        val first = cards.first()
+        val second = cards[1]
+        assertEquals(second, AgentsBoard.neighbor(cards, first.session, first.paneId, 1))
+        assertEquals(first, AgentsBoard.neighbor(cards, second.session, second.paneId, -1))
+        assertNull("before the first", AgentsBoard.neighbor(cards, first.session, first.paneId, -1))
+        assertNull("after the last", AgentsBoard.neighbor(cards, cards.last().session, cards.last().paneId, 1))
+        assertNull("a shell pane is no card", AgentsBoard.neighbor(cards, "default", "w9:p9", 1))
+        // Pane ids repeat across sessions: the session tells them apart.
+        assertEquals("work" to "w1:p2", AgentsBoard.neighbor(cards, "work", "w1:p1", 1)?.let { it.session to it.paneId })
+        assertEquals("default" to "w1:p2", AgentsBoard.neighbor(cards, "default", "w1:p1", 1)?.let { it.session to it.paneId })
+    }
+
+    @Test
     fun cards_carryHerdrsStateChangeSeq() {
         val seen = boardAgent("w1:p1", "w1:t1", "claude", HerdrAgentStatus.BLOCKED).copy(stateChangeSeq = 42)
         val card = AgentsBoard.cards(mapOf("default" to boardSnapshot(listOf("w1" to "alpha"), listOf("w1:t1" to "build"), listOf(seen)))).single()

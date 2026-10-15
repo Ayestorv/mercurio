@@ -54,6 +54,8 @@ chat:approve
 chat:deny
 chat:tool
 chat:terminal
+chat:pane
+chat:swipe-pane
 chat:ask
 chat:tools
 chat:more

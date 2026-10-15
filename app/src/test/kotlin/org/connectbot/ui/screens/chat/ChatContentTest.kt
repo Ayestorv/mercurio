@@ -37,6 +37,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -54,6 +57,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import solutions.ormus.logos.herd.BoardCard
 import solutions.ormus.logos.herd.HerdAnswer
 import solutions.ormus.logos.herd.HerdrAgentStatus
 
@@ -83,6 +87,8 @@ class ChatContentTest {
         answers: MutableList<HerdAnswer> = mutableListOf(),
         picks: MutableList<String> = mutableListOf(),
         windowInsets: WindowInsets = WindowInsets(0),
+        agents: List<BoardCard> = emptyList(),
+        switched: MutableList<BoardCard>? = null,
     ) {
         composeTestRule.setContent {
             ConnectBotTheme {
@@ -97,6 +103,10 @@ class ChatContentTest {
                         onPick = { picks += it },
                         onOpenReader = {},
                         windowInsets = windowInsets,
+                        agents = agents,
+                        currentSession = "default",
+                        currentPane = "w1:p1",
+                        onSwitch = switched?.let { list -> { card -> list += card } },
                     )
                 }
             }
@@ -358,5 +368,57 @@ class ChatContentTest {
 
         composeTestRule.onNodeWithTag(CHAT_LIST_TAG).performScrollToIndex(0)
         composeTestRule.onAllNodesWithText("/ EARLIER MESSAGES NOT SHOWN").assertCountEquals(1)
+    }
+
+    // Three agents the chat can move between: the one on screen (default w1:p1), a second in
+    // the default session, and one in the "work" session with the same pane id as the first.
+    private val agents = listOf(
+        BoardCard("default", "w1:p1", "w1:t1", "claude", HerdrAgentStatus.WORKING, "Dark mode", "1 · app", 1, "Demo", 1),
+        BoardCard("default", "w1:p2", "w1:t2", "codex", HerdrAgentStatus.BLOCKED, "Tests", "2 · tests", 2, "Demo", 1),
+        BoardCard("work", "w1:p1", "w1:t1", "grok", HerdrAgentStatus.IDLE, "Review", "1 · review", 1, "Gamma", 1),
+    )
+
+    @Test
+    fun scan_oneChipPerAgent_theCurrentOneDoesNothing_aTapMovesToThatAgent() {
+        val switched = mutableListOf<BoardCard>()
+        val logged = mutableListOf<String>()
+        show(state(HerdrAgentStatus.WORKING), logged = logged, agents = agents, switched = switched)
+
+        composeTestRule.onNodeWithTag(CHAT_SCAN_TAG).assertExists()
+        composeTestRule.onNodeWithText("claude · 1").assertExists()
+        composeTestRule.onNodeWithText("codex · 2").assertExists()
+        composeTestRule.onNodeWithText("grok · work 1").assertExists()
+
+        composeTestRule.onNodeWithText("claude · 1").performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(emptyList<BoardCard>(), switched)
+
+        composeTestRule.onNodeWithText("grok · work 1").performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(listOf("work" to "w1:p1"), switched.map { it.session to it.paneId })
+        assertEquals(listOf(UsageActions.CHAT_PANE), logged)
+    }
+
+    @Test
+    fun scan_swipeLeftOnTheTranscript_movesToTheNextAgent_swipeRightAtTheStartDoesNothing() {
+        val switched = mutableListOf<BoardCard>()
+        val logged = mutableListOf<String>()
+        show(state(HerdrAgentStatus.WORKING), logged = logged, agents = agents, switched = switched)
+
+        composeTestRule.onNodeWithTag(CHAT_LIST_TAG).performTouchInput { swipeRight() }
+        composeTestRule.waitForIdle()
+        assertEquals(emptyList<BoardCard>(), switched)
+
+        composeTestRule.onNodeWithTag(CHAT_LIST_TAG).performTouchInput { swipeLeft() }
+        composeTestRule.waitForIdle()
+        assertEquals(listOf("default" to "w1:p2"), switched.map { it.session to it.paneId })
+        assertEquals(listOf(UsageActions.CHAT_SWIPE_PANE), logged)
+    }
+
+    @Test
+    fun scan_withOneAgent_showsNoStrip() {
+        show(state(HerdrAgentStatus.WORKING), agents = agents.take(1), switched = mutableListOf())
+
+        composeTestRule.onAllNodesWithTag(CHAT_SCAN_TAG).assertCountEquals(0)
     }
 }

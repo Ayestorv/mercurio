@@ -15,6 +15,12 @@
 	<string name="chat_key">Chat</string>
 	<!-- Compose bar, row 1: what a screen reader says for the Chat key -->
 	<string name="chat_key_description">Chat view of this pane</string>
+	<!-- Chat View: one chip per active agent in the strip under the header; %1$s is the agent kind, %2$d its tab number -->
+	<!-- Chat View: the chip's agent kind when Herdr names none -->
+	<string name="chat_scan_agent">agent</string>
+	<string name="chat_scan_chip">%1$s · %2$d</string>
+	<!-- Chat View: the same chip for an agent in another Herdr session; %2$s is the session name -->
+	<string name="chat_scan_chip_session">%1$s · %2$s %3$d</string>
 	<!-- Agents board: title -->
 	<string name="board_title">Agents</string>
 	<!-- Agents board: content description of the back button -->

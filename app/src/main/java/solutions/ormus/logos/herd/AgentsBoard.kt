@@ -114,6 +114,18 @@ object AgentsBoard {
      * order), wrapping round; the first waiting one when [session] has no snapshot. Each tap
      * moves the focus on, so taps cycle through every waiting agent. Null when none waits.
      */
+
+    /**
+     * The card [step] places after the one at [session] and [paneId] in [cards] (1 the next
+     * agent, -1 the previous), in the order [cards] gives; null at either end, or when that
+     * pane is no card. The chat scans agents with it.
+     */
+    fun neighbor(cards: List<BoardCard>, session: String, paneId: String?, step: Int): BoardCard? {
+        val at = cards.indexOfFirst { it.session == session && it.paneId == paneId }
+        if (at < 0) return null
+        return cards.getOrNull(at + step)
+    }
+
     fun nextNeedsYou(snapshots: Map<String, HerdrSessionSnapshot>, session: String): BoardCard? {
         val waiting = cards(snapshots).filter { it.column == BoardColumn.NEEDS_YOU }
         if (waiting.isEmpty()) return null
