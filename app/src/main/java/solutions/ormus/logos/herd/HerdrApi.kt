@@ -100,7 +100,10 @@ object HerdrApi {
     /** Shell single-quote escaping: `'` -> `'\''` (the POSIX trick, prevents text injection). */
     fun shQuote(s: String): String = "'" + s.replace("'", "'\\''") + "'"
 
-    /** Mercurio: an exec channel gets a bare environment, so run through a login shell to find herdr. */
+    /**
+     * Mercurio: an exec channel gets a bare environment, so run through a login shell to find herdr.
+     * On a Windows host [HostShell] takes the wrapper off again and requotes the words for cmd.exe.
+     */
     fun loginShell(command: String): String = "bash -lc ${shQuote(command)}"
 
     /**

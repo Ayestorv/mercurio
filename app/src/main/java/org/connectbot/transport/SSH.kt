@@ -66,6 +66,7 @@ import org.connectbot.util.PubkeyUtils
 import org.connectbot.util.SshKeyType
 import org.connectbot.util.UrlUtils
 import solutions.ormus.logos.devtools.LoopbackForward
+import solutions.ormus.logos.herd.HostShell
 import timber.log.Timber
 import java.io.IOException
 import java.io.InputStream
@@ -180,7 +181,13 @@ class SSH :
      * main thread. Throws [IOException] on timeout and [IllegalStateException]
      * when not connected.
      */
-    fun execDetailed(command: String, timeoutMs: Long = EXEC_TIMEOUT_MS): CommandOutput = SSH.execDetailed(connection ?: throw IllegalStateException("Not connected"), command, timeoutMs)
+    fun execDetailed(command: String, timeoutMs: Long = EXEC_TIMEOUT_MS): CommandOutput {
+        val conn = connection ?: throw IllegalStateException("Not connected")
+        return hostShell.run(command) { SSH.execDetailed(conn, it, timeoutMs) }
+    }
+
+    // Mercurio: a Windows host runs exec commands through cmd.exe; HostShell rewrites them once it says so.
+    private val hostShell = HostShell()
 
     /**
      * Forward a free loopback port on the phone to [destHost]:[destPort] as the host sees

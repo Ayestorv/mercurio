@@ -20,6 +20,7 @@ package org.connectbot.transport
 import com.trilead.ssh2.Connection
 import com.trilead.ssh2.ExtendedServerHostKeyVerifier
 import org.connectbot.data.entity.Host
+import solutions.ormus.logos.herd.HostShell
 import java.io.IOException
 import java.security.KeyPair
 
@@ -67,8 +68,11 @@ class HeadlessSsh(private val host: Host, private val verifier: ExtendedServerHo
         }
     }
 
+    // Mercurio: a Windows host runs exec commands through cmd.exe; HostShell rewrites them once it says so.
+    private val hostShell = HostShell()
+
     /** Run [command] over its own exec channel; see [SSH.execDetailed]. Blocking. */
-    fun exec(command: String): CommandOutput = SSH.execDetailed(connection, command)
+    fun exec(command: String): CommandOutput = hostShell.run(command) { SSH.execDetailed(connection, it) }
 
     override fun close() {
         connection.close()
