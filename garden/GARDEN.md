@@ -1,10 +1,10 @@
 # Garden: Mercurio
 
-As of 2026-10-14.
+As of 2026-10-21.
 
 ## Plot
 
-- Copy: repo clone at 6de242a2 (.)
+- Copy: repo clone at 785184ba (.)
 - Planted: 0 skills (0 principles), 0 commands, 0 guide pages
 
 ## Beds
@@ -16,22 +16,22 @@ As of 2026-10-14.
 
 ## Waiting for review
 
-- none
+- PR #167 docs(pantry): restock 2026-10-14 (pantry/restock-2026-10-14)
 
 ## Weeds
 
 - No gardener PR open
-- Weed pulls in history: 5 (last: 0fc1c0c6 2026-10-13 chore(garden): garden report 2026-10-13 (#164))
+- Weed pulls in history: 11 (last: 785184ba 2026-10-20 chore(garden): garden report 2026-10-20 (#180))
 - Checks planted: 152 commits touched scripts/check.sh or .github/workflows (last: 4272bb6a 2026-10-04 chore(ci): remove hosted CI; the local gate is the gate (#64))
 - Weed kinds in WEEDS.md: 4, 3 with a check
 
 ## Soil
 
-- This clone: 6de242a, current
+- This clone: 785184b, current
 
 ## Water
 
-- no Hermes cron file on this host
+- no ormus-stack jobs on this host
 - Routine courier: on the crontab (13,28,43,58 * * * *)
 - Routine dream cycle: on the crontab (27 3 * * *)
 

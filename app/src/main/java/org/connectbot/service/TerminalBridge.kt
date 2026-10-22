@@ -734,6 +734,10 @@ class TerminalBridge {
     val mouseReporting: Boolean
         get() = mouse.active
 
+    /** Whether the program in the terminal asked for bracketed paste (DECSET ?2004). */
+    val bracketedPaste: Boolean
+        get() = mouse.bracketedPaste
+
     /**
      * Send one wheel notch, [up] or down, at the 1-based [col] and [row] when the program in
      * the terminal asked for mouse reports. Returns whether one was sent.

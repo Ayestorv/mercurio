@@ -205,6 +205,7 @@ import solutions.ormus.logos.herd.HerdrAction
 import solutions.ormus.logos.herd.HerdrCommands
 import solutions.ormus.logos.herd.HerdrKeys
 import solutions.ormus.logos.herd.HerdrSwipe
+import solutions.ormus.logos.terminal.BracketedPaste
 import timber.log.Timber
 
 /**
@@ -669,7 +670,7 @@ fun ConsoleScreen(
                 ?.toString()
 
             if (!clip.isNullOrBlank()) {
-                bridge.injectString(clip)
+                bridge.injectString(BracketedPaste.wrap(clip, bridge.bracketedPaste))
             }
         }
     }

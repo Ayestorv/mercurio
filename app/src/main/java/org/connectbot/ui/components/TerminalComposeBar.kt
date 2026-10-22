@@ -118,6 +118,7 @@ import solutions.ormus.logos.herd.Herd
 import solutions.ormus.logos.herd.HerdrKey
 import solutions.ormus.logos.herd.HerdrKeys
 import solutions.ormus.logos.herd.HerdrSessionSnapshot
+import solutions.ormus.logos.terminal.BracketedPaste
 
 // Control bytes built from code points so no raw control chars live in the source.
 private val ESC: String = 27.toChar().toString() // 0x1b
@@ -471,7 +472,8 @@ fun TerminalComposeBar(
         val payload = draft.text
         draft.value = TextFieldValue()
         bridge.herd?.cancelPrefix()
-        bridge.injectString(payload)
+        // Line breaks go as one paste, so a multi-line draft is one message, not one per line.
+        bridge.injectString(BracketedPaste.wrap(payload, bridge.bracketedPaste))
         // Submit with a separate, slightly-delayed Enter so the remote TUI
         // (e.g. Claude Code) registers a discrete Enter and runs the command,
         // rather than folding a trailing newline into the pasted text.

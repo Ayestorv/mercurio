@@ -71,6 +71,20 @@ class TerminalMouseTest {
     }
 
     @Test
+    fun bracketedPaste_isOnWhileTheProgramAskedForIt_andRisOrANewConnectionTurnsItOff() {
+        assertFalse(mouse().bracketedPaste)
+        assertTrue(mouse("$esc[?2004h").bracketedPaste)
+        assertFalse(mouse("$esc[?2004h", "$esc[?2004l").bracketedPaste)
+        assertFalse(mouse("$esc[?2004h", "${esc}c").bracketedPaste)
+        assertFalse(mouse("$esc[?2004h").apply { reset() }.bracketedPaste)
+        // Leaving the alternate screen keeps it, like the cursor keys: the program turns it off itself.
+        assertTrue(mouse("$esc[?1049h$esc[?2004h", "$esc[?1049l").bracketedPaste)
+        // Split across reads, and among other modes.
+        assertTrue(mouse("$esc[?20", "04h").bracketedPaste)
+        assertTrue(mouse("$esc[?1049;2004;1006h").bracketedPaste)
+    }
+
+    @Test
     fun severalModesInOneSequence_andModesAmongOtherOutput() {
         val mouse = mouse("hello$esc[2J$esc[?1049;1000;1006h$esc[1;1Hsidebar")
         assertEquals("$esc[<0;2;1M$esc[<0;2;1m", mouse.click(2, 1).text())

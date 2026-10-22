@@ -56,6 +56,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -613,6 +614,22 @@ class TerminalComposeBarTest {
         assertEquals(listOf("a long voice note", CR), sentBytes(bridge))
         assertEquals(listOf(UsageActions.DRAFT_SEND), logged)
         assertEquals("", draft.text)
+    }
+
+    @Test
+    fun aDraftWithLineBreaks_goesAsOnePaste_whenTheProgramAskedForBracketedPaste() {
+        val bridge = bridgeWithPostLogin(null)
+        `when`(bridge.bracketedPaste).thenReturn(true)
+        val draft = DictationDraft()
+        setBar(bridge, draft = draft)
+        composeTestRule.runOnUiThread { draft.value = TextFieldValue("fix the header\nthen run the tests") }
+
+        composeTestRule.runOnUiThread { draft.requestSend() }
+        composeTestRule.waitForIdle()
+        composeTestRule.mainClock.advanceTimeBy(100)
+
+        // One paste, then one Enter: the agent gets one message, not one per line.
+        assertEquals(listOf(ESC + "[200~fix the header\nthen run the tests" + ESC + "[201~", CR), sentBytes(bridge))
     }
 
     @Test

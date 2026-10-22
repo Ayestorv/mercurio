@@ -34,6 +34,9 @@ package solutions.ormus.logos.terminal
  * Application cursor keys (DECCKM, ?1) are tracked too, for the arrows a drag sends
  * ([arrow]). Leaving the alternate screen keeps them: a shell such as zsh turns them on at
  * its prompt, and the program that leaves turns them off itself.
+ *
+ * Bracketed paste (?2004) is tracked the same way, for text with line breaks the compose
+ * bar sends as one paste ([bracketedPaste]).
  */
 class TerminalMouse {
     private enum class Encoding { LEGACY, SGR, URXVT }
@@ -44,6 +47,7 @@ class TerminalMouse {
 
     private var alternate = false
     private var cursorKeys = false
+    private var bracketed = false
     private var entered = 0
 
     // An unfinished sequence at the end of the last output, finished by the next.
@@ -56,6 +60,10 @@ class TerminalMouse {
     /** Whether the terminal shows the alternate screen. */
     val alternateScreen: Boolean
         @Synchronized get() = alternate
+
+    /** Whether the program asked for bracketed paste: pasted text between ESC [200~ and ESC [201~. */
+    val bracketedPaste: Boolean
+        @Synchronized get() = bracketed
 
     /** How many times the alternate screen went up: a change means a full-screen program started since. */
     val screensEntered: Int
@@ -81,6 +89,7 @@ class TerminalMouse {
     @Synchronized
     fun reset() {
         cursorKeys = false
+        bracketed = false
         resetScreen()
     }
 
@@ -142,6 +151,8 @@ class TerminalMouse {
         when (mode) {
             DECCKM -> cursorKeys = on
 
+            BRACKETED_PASTE -> bracketed = on
+
             X10, 1000, 1002, 1003 -> tracking = if (on) mode else 0
 
             1006 -> encoding = if (on) Encoding.SGR else Encoding.LEGACY
@@ -160,6 +171,7 @@ class TerminalMouse {
         private const val ESC = '\u001b'
         private const val RIS = "\u001bc"
         private const val DECCKM = 1
+        private const val BRACKETED_PASTE = 2004
         private const val X10 = 9
         private const val PRESS = 0
         private const val RELEASE = 3
