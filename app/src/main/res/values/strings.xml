@@ -1107,6 +1107,10 @@
 	<string name="compose_bar_url_copied">Copied %1$s</string>
 	<!-- Toast when the recent output holds no URL -->
 	<string name="compose_bar_no_url">No URL in the recent output</string>
+	<!-- Compose bar tray: what holding the link key does, read out by a screen reader -->
+	<string name="compose_bar_open_url">Open latest URL</string>
+	<!-- Toast when no app on the phone opened the URL the link key was held on. %1$s is the URL -->
+	<string name="compose_bar_url_open_failed">Could not open %1$s</string>
 	<!-- Compose bar tray: description of the key that copies the agent's last reply to this phone -->
 	<string name="compose_bar_copy_reply">Copy last reply</string>
 	<!-- Toast after the reply was copied. %1$d is its length in characters -->

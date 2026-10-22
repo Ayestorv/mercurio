@@ -22,8 +22,9 @@ management come from ConnectBot. Mercurio is maintained by
   cycling, and a long press (or a tap with none waiting) opens the Agents board.
 - **Tray.** ⋯ or a swipe up on the bar opens more keys: arrows, jump to the
   latest output, Mode, clear the typed line, the read view, copy the latest
-  URL, copy the agent's last reply, paste a screenshot, Herdr's sidebar and the
-  slash menu.
+  URL (hold it to open the URL instead, whole even when it wrapped at the screen
+  edge), copy the agent's last reply, paste a screenshot, Herdr's sidebar and
+  the slash menu.
 - **Read view.** Recent output in a full-screen view you can scroll and select.
   On a Herdr host it reads the focused pane with `herdr pane read`.
 - **Draft view.** The text input button opens the whole draft in a large view,

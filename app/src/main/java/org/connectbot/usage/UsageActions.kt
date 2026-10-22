@@ -64,6 +64,7 @@ object UsageActions {
     const val BAR_TRAY_CLOSE = "bar:tray-close"
     const val BAR_TRAY_SWIPE = "bar:tray-swipe"
     const val BAR_URL_COPY = "bar:url-copy"
+    const val BAR_URL_OPEN = "bar:url-open"
     const val BAR_REPLY_COPY = "bar:reply-copy"
 
     /** The / key in row 2 that opens the agent slash-command menu. */
@@ -378,7 +379,7 @@ object UsageActions {
         KEY_MODE, KEY_ESC, KEY_STOP, KEY_CTRL, KEY_CTRL_CHAR, KEY_Y, KEY_N,
         KEY_TAB, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_BOTTOM, KEY_CLEAR_LINE, KEY_ENTER, KEY_OTHER,
         DICTATION_MIC, SEND, SEND_IME, DRAFT_SEND, PASTE_SCREENSHOT,
-        BAR_TRAY_OPEN, BAR_TRAY_CLOSE, BAR_TRAY_SWIPE, BAR_URL_COPY, BAR_REPLY_COPY, BAR_SLASH_MENU,
+        BAR_TRAY_OPEN, BAR_TRAY_CLOSE, BAR_TRAY_SWIPE, BAR_URL_COPY, BAR_URL_OPEN, BAR_REPLY_COPY, BAR_SLASH_MENU,
         HERDR_NEEDS_YOU, HERDR_GOTO, HERDR_PREV_TAB, HERDR_NEXT_TAB, HERDR_SCROLL, HERDR_SIDEBAR,
         HERDR_PGUP, HERDR_PGDN, HERDR_DONE,
         READER_OPEN, READER_CLOSE, READER_REFRESH, READER_TOP, READER_PGUP, READER_PGDN,

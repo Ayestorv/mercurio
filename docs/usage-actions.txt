@@ -26,6 +26,7 @@ bar:tray-open
 bar:tray-close
 bar:tray-swipe
 bar:url-copy
+bar:url-open
 bar:reply-copy
 bar:slash-menu
 herdr:needs-you

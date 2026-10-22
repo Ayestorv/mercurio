@@ -24,10 +24,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -65,6 +67,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -74,8 +77,10 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
@@ -320,15 +325,35 @@ private fun IconKey(
     description: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    longClickLabel: String? = null,
 ) {
-    Button(
-        onClick = onClick,
-        modifier = modifier.height(KEY_HEIGHT),
+    if (onLongClick == null) {
+        Button(
+            onClick = onClick,
+            modifier = modifier.height(KEY_HEIGHT),
+            shape = KEY_SHAPE,
+            colors = keyColors(KeyTone.PLAIN),
+            border = keyBorder(KeyTone.PLAIN),
+            contentPadding = KEY_PADDING,
+        ) { Icon(icon, contentDescription = description, modifier = Modifier.size(20.dp)) }
+        return
+    }
+    // A Button takes no long press, so a key with one is drawn the same way by hand.
+    val colors = keyColors(KeyTone.PLAIN)
+    Surface(
+        modifier = modifier
+            .height(KEY_HEIGHT)
+            .clip(KEY_SHAPE)
+            .combinedClickable(role = Role.Button, onLongClickLabel = longClickLabel, onLongClick = onLongClick, onClick = onClick)
+            .semantics { contentDescription = description },
         shape = KEY_SHAPE,
-        colors = keyColors(KeyTone.PLAIN),
+        color = colors.containerColor,
+        contentColor = colors.contentColor,
         border = keyBorder(KeyTone.PLAIN),
-        contentPadding = KEY_PADDING,
-    ) { Icon(icon, contentDescription = description, modifier = Modifier.size(20.dp)) }
+    ) {
+        Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp)) }
+    }
 }
 
 /** Tray key that uploads the phone's latest screenshot and adds its path to the field. */
@@ -451,6 +476,7 @@ fun TerminalComposeBar(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val clipboard = LocalClipboard.current
+    val uriHandler = LocalUriHandler.current
     val usage = LocalUsageLog.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -748,6 +774,22 @@ fun TerminalComposeBar(
                                 }
                             },
                             modifier = Modifier.weight(1f),
+                            // Held: opened in the phone's browser, as a click on a link opens it in a desktop terminal.
+                            onLongClick = {
+                                usage.log(UsageActions.BAR_URL_OPEN)
+                                scope.launch {
+                                    val url = LatestUrl.find(readRecentOutput())
+                                    val opened = url != null && runCatching { uriHandler.openUri(url) }.isSuccess
+                                    if (!opened) {
+                                        Toast.makeText(
+                                            context,
+                                            if (url != null) context.getString(R.string.compose_bar_url_open_failed, url) else context.getString(R.string.compose_bar_no_url),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                }
+                            },
+                            longClickLabel = stringResource(R.string.compose_bar_open_url),
                         )
                         // The agent's last reply, onto this phone's clipboard.
                         IconKey(

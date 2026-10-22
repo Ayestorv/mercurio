@@ -28,6 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -101,6 +103,14 @@ class TerminalComposeBarTest {
     val composeTestRule = createAndroidComposeRule<ComponentActivity>()
 
     private val logged = mutableListOf<String>()
+
+    // What the bar asked the phone to open, in place of the browser.
+    private val opened = mutableListOf<String>()
+    private val uriHandler = object : UriHandler {
+        override fun openUri(uri: String) {
+            opened += uri
+        }
+    }
 
     private fun bridgeWithPostLogin(postLogin: String?): TerminalBridge {
         val bridge = mock(TerminalBridge::class.java)
@@ -192,7 +202,7 @@ class TerminalComposeBarTest {
     ) {
         composeTestRule.setContent {
             ConnectBotTheme {
-                CompositionLocalProvider(LocalUsageLog provides UsageLog { logged += it }) {
+                CompositionLocalProvider(LocalUsageLog provides UsageLog { logged += it }, LocalUriHandler provides uriHandler) {
                     // The console owns whether the Herdr panel is open; this stands in for it.
                     var herdrOpen by remember { mutableStateOf(false) }
                     Box(Modifier.width(PHONE_WIDTH).fillMaxSize()) {
@@ -843,6 +853,22 @@ class TerminalComposeBarTest {
         assertEquals("https://app.example.com/x", clipboard.primaryClip!!.getItemAt(0).text.toString())
         assertEquals(listOf(UsageActions.BAR_URL_COPY), logged)
         assertTrayOpen()
+    }
+
+    @Test
+    fun trayUrlKey_held_opensTheLatestUrl_wholeEvenWhenItWrappedAtTheEdge() {
+        val url = "https://accounts.example.com/o/oauth2/auth?access_type=offline&client_id=1234567890.apps.example.com&state=Na1bJMqwsS"
+        val rule = "\u2500".repeat(40)
+        val screen = (listOf("Open the URL below in your browser:", rule) + url.chunked(40) + listOf(rule, "authorization code...")).joinToString("\n")
+        setBar(bridgeWithPostLogin("herdr\n"), recentOutput = screen)
+        openTray()
+        logged.clear()
+
+        key("Copy latest URL").performTouchInput { longClick() }
+        composeTestRule.waitForIdle()
+
+        assertEquals(listOf(url), opened)
+        assertEquals(listOf(UsageActions.BAR_URL_OPEN), logged)
     }
 
     @Test
