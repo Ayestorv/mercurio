@@ -58,12 +58,12 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Difference
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -1474,8 +1474,9 @@ fun ConsoleScreen(
                             },
                             enabled = currentBridge != null,
                         ) {
+                            // A notepad, not an expand arrow: it opens a page to write a long message on.
                             Icon(
-                                Icons.Default.OpenInFull,
+                                Icons.Default.EditNote,
                                 contentDescription = stringResource(R.string.console_menu_text_input),
                             )
                         }

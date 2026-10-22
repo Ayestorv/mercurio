@@ -385,7 +385,8 @@
   <string name="button_key_f12">F12</string>
   <string name="terminal_keyboard_text_input_button">Entrada de texto</string>
     <string name="terminal_text_input_dialog_label">Introduzca texto para enviar a la terminal</string>
-    <string name="console_menu_text_input">Entrada de texto</string>
+    <string name="console_menu_text_input">Borrador para un mensaje largo</string>
+    <string name="draft_hint">Escribe o dicta aquí un mensaje largo y revísalo antes de que Enviar lo mande.</string>
   <string name="button_send">Enviar</string>
   <string name="button_ok">De acuerdo</string>
   <string name="button_close">Cerrar</string>

@@ -986,10 +986,12 @@
 	<string name="terminal_text_input_dialog_label">Enter text to send to terminal</string>
 
 
-	<!-- Console top bar and palette: open the draft view, the whole dictation draft large before it is sent -->
-	<string name="console_menu_text_input">Review draft</string>
+	<!-- Console top bar and palette: open the draft view, a page to write or dictate a long message before it is sent -->
+	<string name="console_menu_text_input">Draft a long message</string>
 	<!-- Draft view: micro-label title -->
 	<string name="draft_title">Draft</string>
+	<!-- Draft view: hint in the empty field -->
+	<string name="draft_hint">Write or dictate a long message here, and read it over before Send sends it.</string>
 	<!-- Draft view: length of the draft. %1$d is the number of characters -->
 	<string name="draft_count">%1$d characters</string>
 	<!-- Draft view: empty the draft -->

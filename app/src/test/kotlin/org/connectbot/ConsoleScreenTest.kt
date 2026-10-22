@@ -413,7 +413,7 @@ class ConsoleScreenTest {
         navigateToConsoleScreen()
 
         composeTestRule
-            .onNodeWithContentDescription("Review draft")
+            .onNodeWithContentDescription("Draft a long message")
             .assertIsDisplayed()
     }
 

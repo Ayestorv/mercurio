@@ -63,6 +63,13 @@ class DraftDialogTest {
     }
 
     @Test
+    fun anEmptyDraft_saysWhatThePageIsFor() {
+        show(DictationDraft())
+
+        composeTestRule.onNodeWithText("Write or dictate a long message here, and read it over before Send sends it.").assertExists()
+    }
+
+    @Test
     fun send_asksTheBarToSend_andCloses() {
         val draft = DictationDraft().apply { value = TextFieldValue("ship it") }
         show(draft)

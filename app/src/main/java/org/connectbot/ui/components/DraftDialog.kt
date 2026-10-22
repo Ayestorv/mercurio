@@ -76,6 +76,7 @@ fun DraftDialog(
                 OutlinedTextField(
                     value = draft.value,
                     onValueChange = { draft.value = it },
+                    placeholder = { Text(stringResource(R.string.draft_hint)) },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp),
                     shape = OrmusCornerShape,
                     modifier = Modifier
