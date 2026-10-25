@@ -83,6 +83,7 @@ console:back
 console:text-input
 console:paste
 console:menu
+console:settings
 menu:reconnect
 menu:disconnect
 menu:url-scan
@@ -117,6 +118,8 @@ settings:usage-summary
 settings:usage-clear
 settings:upload-now
 settings:wishes
+panel:enter-new-line
+panel:all-settings
 session:start
 session:end
 session:fail

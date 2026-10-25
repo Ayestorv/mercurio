@@ -145,6 +145,9 @@ object UsageActions {
     const val CONSOLE_TEXT_INPUT = "console:text-input"
     const val CONSOLE_PASTE = "console:paste"
     const val CONSOLE_MENU = "console:menu"
+
+    /** The gear on the console top bar: opens the settings panel. */
+    const val CONSOLE_SETTINGS = "console:settings"
     const val MENU_RECONNECT = "menu:reconnect"
     const val MENU_DISCONNECT = "menu:disconnect"
     const val MENU_URL_SCAN = "menu:url-scan"
@@ -188,6 +191,10 @@ object UsageActions {
     const val SETTINGS_USAGE_CLEAR = "settings:usage-clear"
     const val SETTINGS_UPLOAD_NOW = "settings:upload-now"
     const val SETTINGS_WISHES = "settings:wishes"
+
+    // Settings panel (the console's gear).
+    const val PANEL_ENTER_NEW_LINE = "panel:enter-new-line"
+    const val PANEL_ALL_SETTINGS = "panel:all-settings"
 
     // Herd screen (agents by who needs you).
     const val HERD_OPEN = "herd:open"
@@ -389,7 +396,7 @@ object UsageActions {
         DRAWER_OPEN, DRAWER_SWITCH, DRAWER_DISCONNECT, DRAWER_QUICK_CONNECT, DRAWER_HOST_LIST,
         TITLE_PULL_DRAWER, TITLE_PULL_DISCONNECT,
         MACHINES_CONNECT, MACHINES_REFRESH, MACHINES_FIX_PROMPT, MACHINES_API_SECRET,
-        CONSOLE_BACK, CONSOLE_TEXT_INPUT, CONSOLE_PASTE, CONSOLE_MENU,
+        CONSOLE_BACK, CONSOLE_TEXT_INPUT, CONSOLE_PASTE, CONSOLE_MENU, CONSOLE_SETTINGS,
         MENU_RECONNECT, MENU_DISCONNECT, MENU_URL_SCAN, MENU_RESIZE, MENU_PORT_FORWARDS,
         MENU_FULLSCREEN, MENU_TITLE_BAR, MENU_WISH, MENU_COPY_DETAILS, MENU_SEND_ERROR,
         OVERLAY_RECONNECT, OVERLAY_CLOSE, OVERLAY_COPY_DETAILS, OVERLAY_SEND_ERROR,
@@ -397,6 +404,7 @@ object UsageActions {
         HOSTLIST_CONNECT, HOSTLIST_ADD, HOSTLIST_SETTINGS, HOSTLIST_WISH, HOSTLIST_COPY_DETAILS, HOSTLIST_SEND_ERROR,
         WISH_SAVE, WISH_EDIT, WISH_DONE, WISH_DELETE,
         SETTINGS_USAGE_SUMMARY, SETTINGS_USAGE_CLEAR, SETTINGS_UPLOAD_NOW, SETTINGS_WISHES,
+        PANEL_ENTER_NEW_LINE, PANEL_ALL_SETTINGS,
         SESSION_START, SESSION_END, SESSION_FAIL, SESSION_RECONNECT, SESSION_AUTO_RECONNECT,
         UPLOAD_REFUSED_HOSTKEY,
         HERD_OPEN, HERD_CARD, HERD_REFRESH, HERD_COMMANDS, HERD_CLOSE,

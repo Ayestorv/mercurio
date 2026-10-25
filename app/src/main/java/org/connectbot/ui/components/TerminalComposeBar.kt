@@ -468,6 +468,8 @@ fun TerminalComposeBar(
     /** The Herdr panel's Diff key: open the diff viewer. */
     onDiff: (() -> Unit)? = null,
     draft: DictationDraft = remember { DictationDraft() },
+    /** The keyboard's Enter starts a new line in the field, and only ⏎ sends (the settings panel's switch). */
+    enterNewLine: Boolean = false,
     /** The session's recent output as plain text, for the URL key (blocking work off main). */
     readRecentOutput: suspend () -> String = { withContext(Dispatchers.IO) { RecentOutput.read(bridge).text } },
     /** The agent's last reply, for the copy key; null when there is none. */
@@ -1011,7 +1013,8 @@ fun TerminalComposeBar(
                         maxLines = 4,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Text,
-                            imeAction = ImeAction.Send,
+                            // Default on a multi-line field is a new line; Send turns Enter into ⏎.
+                            imeAction = if (enterNewLine) ImeAction.Default else ImeAction.Send,
                         ),
                         keyboardActions = KeyboardActions(onSend = { send(UsageActions.SEND_IME) }),
                         colors = TextFieldDefaults.colors(

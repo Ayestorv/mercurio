@@ -2042,4 +2042,11 @@
 	<string name="palette_subtitle_settings">Opens Settings</string>
 	<!-- Command palette: subtitle of the slash menu result -->
 	<string name="palette_subtitle_slash_menu">Every command of the agent in this session</string>
+	<!-- The settings panel, opened from the gear on the console's top bar. -->
+	<string name="settings_panel_compose_bar">Compose bar</string>
+	<string name="settings_panel_enter_new_line">Enter starts a new line</string>
+	<string name="settings_panel_enter_new_line_on">Enter adds a line. The ⏎ key on the bar sends.</string>
+	<string name="settings_panel_enter_new_line_off">Enter sends, like the ⏎ key on the bar.</string>
+	<string name="settings_panel_all_settings">All settings</string>
+	<string name="settings_panel_all_settings_summary">Terminal, keyboard, fonts and connections</string>
 </resources>

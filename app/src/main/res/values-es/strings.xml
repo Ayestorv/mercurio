@@ -569,4 +569,11 @@
   <string name="pubkey_paste_from_clipboard" tools:machine_translated="true">Pegar desde el portapapeles</string>
   <string name="auth_banner_title" tools:machine_translated="true">Mensaje de autenticación procedente de %1$s</string>
   <string name="terminal_auth_banner_header" tools:machine_translated="true">[%1$s] Mensaje de autenticación:</string>
+  <!-- The settings panel, opened from the gear on the console's top bar. -->
+  <string name="settings_panel_compose_bar">Barra de texto</string>
+  <string name="settings_panel_enter_new_line">Enter baja de línea</string>
+  <string name="settings_panel_enter_new_line_on">Enter agrega una línea. La tecla ⏎ de la barra envía.</string>
+  <string name="settings_panel_enter_new_line_off">Enter envía, igual que la tecla ⏎ de la barra.</string>
+  <string name="settings_panel_all_settings">Todos los ajustes</string>
+  <string name="settings_panel_all_settings_summary">Terminal, teclado, fuentes y conexiones</string>
 </resources>

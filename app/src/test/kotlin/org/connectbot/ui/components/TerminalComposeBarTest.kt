@@ -54,10 +54,12 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -199,6 +201,7 @@ class TerminalComposeBarTest {
         recentOutput: String = "",
         lastReply: String? = null,
         onBoard: (() -> Unit)? = null,
+        enterNewLine: Boolean = false,
     ) {
         composeTestRule.setContent {
             ConnectBotTheme {
@@ -220,6 +223,7 @@ class TerminalComposeBarTest {
                             onSlashMenu = onSlashMenu,
                             onBoard = onBoard,
                             draft = draft,
+                            enterNewLine = enterNewLine,
                             readRecentOutput = { recentOutput },
                             readLastReply = { lastReply },
                         )
@@ -640,6 +644,39 @@ class TerminalComposeBarTest {
 
         // One paste, then one Enter: the agent gets one message, not one per line.
         assertEquals(listOf(ESC + "[200~fix the header\nthen run the tests" + ESC + "[201~", CR), sentBytes(bridge))
+    }
+
+    @Test
+    fun theKeyboardsEnter_sendsTheDraft_byDefault() {
+        val bridge = bridgeWithPostLogin(null)
+        setBar(bridge)
+        val field = composeTestRule.onNode(hasSetTextAction())
+        field.assert(SemanticsMatcher.expectValue(SemanticsProperties.ImeAction, ImeAction.Send))
+        field.performTextInput("run the tests")
+
+        field.performImeAction()
+        composeTestRule.mainClock.advanceTimeBy(100)
+
+        assertEquals(listOf("run the tests", CR), sentBytes(bridge))
+        assertEquals(listOf(UsageActions.SEND_IME), logged)
+    }
+
+    @Test
+    fun withEnterNewLineOn_theKeyboardsEnterIsANewLine_andTheBarKeySendsTheLinesAsOnePaste() {
+        val bridge = bridgeWithPostLogin(null)
+        `when`(bridge.bracketedPaste).thenReturn(true)
+        setBar(bridge, enterNewLine = true)
+        val field = composeTestRule.onNode(hasSetTextAction())
+        // Default on a multi-line field: the keyboard shows a return key that types a line break.
+        field.assert(SemanticsMatcher.expectValue(SemanticsProperties.ImeAction, ImeAction.Default))
+        field.performTextInput("fix the header\nthen run the tests")
+        assertEquals(emptyList<String>(), sentBytes(bridge))
+
+        key(SEND).performClick()
+        composeTestRule.mainClock.advanceTimeBy(100)
+
+        assertEquals(listOf(ESC + "[200~fix the header\nthen run the tests" + ESC + "[201~", CR), sentBytes(bridge))
+        assertEquals(listOf(UsageActions.SEND), logged)
     }
 
     @Test

@@ -39,6 +39,7 @@ import org.connectbot.ui.screens.help.HelpScreen
 import org.connectbot.ui.screens.hints.HintsScreen
 import org.connectbot.ui.screens.hosteditor.HostEditorScreen
 import org.connectbot.ui.screens.hostlist.HostListScreen
+import org.connectbot.ui.screens.panel.SettingsPanelScreen
 import org.connectbot.ui.screens.portforwardlist.PortForwardListScreen
 import org.connectbot.ui.screens.profiles.ProfileEditorScreen
 import org.connectbot.ui.screens.profiles.ProfileListScreen
@@ -180,6 +181,13 @@ fun ConnectBotNavHost(
         ) {
             PortForwardListScreen(
                 onNavigateBack = { navController.safePopBackStack() },
+            )
+        }
+
+        composable(NavDestinations.SETTINGS_PANEL) {
+            SettingsPanelScreen(
+                onNavigateBack = { navController.safePopBackStack() },
+                onNavigateToAllSettings = { navController.navigateSafely(NavDestinations.SETTINGS) },
             )
         }
 

@@ -69,6 +69,7 @@ import org.connectbot.terminal.TerminalDimensions
 import org.connectbot.terminal.TerminalEmulator
 import org.connectbot.terminal.TerminalEmulatorFactory
 import org.connectbot.ui.LocalTerminalManager
+import org.connectbot.ui.navigation.NavDestinations
 import org.connectbot.ui.screens.console.CONSOLE_TITLE_TAG
 import org.connectbot.ui.screens.console.ConsoleScreen
 import org.connectbot.ui.screens.console.ConsoleUiState
@@ -251,6 +252,39 @@ class ConsoleScreenTest {
             .performClick()
 
         assertTrue(navigatedToSettings)
+    }
+
+    @Test
+    fun consoleScreen_theGearOpensTheSettingsPanel() {
+        var route: String? = null
+
+        composeTestRule.setContent {
+            val ctx = LocalContext.current
+            navController = TestNavHostController(ctx)
+            navController.navigatorProvider.addNavigator(ComposeNavigator())
+            ConnectBotTheme {
+                CompositionLocalProvider(LocalTerminalManager provides null) {
+                    NavHost(navController = navController, startDestination = "start") {
+                        composable("start") {}
+                        composable(
+                            route = "console/{hostId}",
+                            arguments = listOf(navArgument("hostId") { type = NavType.LongType }),
+                        ) {
+                            ConsoleScreen(
+                                onNavigateBack = { navController.popBackStack() },
+                                onNavigateToPortForwards = {},
+                                onNavigateToRoute = { route = it },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        navigateToConsoleScreen()
+
+        composeTestRule.onNodeWithContentDescription("Settings").performClick()
+
+        assertEquals(NavDestinations.SETTINGS_PANEL, route)
     }
 
     @Test

@@ -66,6 +66,7 @@ import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DrawerValue
@@ -332,6 +333,8 @@ fun ConsoleScreen(
     val keyboardAlwaysVisible = remember { prefs.getBoolean(PreferenceConstants.KEY_ALWAYS_VISIBLE, false) }
     var fullscreen by remember { mutableStateOf(prefs.getBoolean(PreferenceConstants.FULLSCREEN, false)) }
     var titleBarHide by remember { mutableStateOf(prefs.getBoolean(PreferenceConstants.TITLEBARHIDE, false)) }
+    // Read again each time the console comes back from the settings panel.
+    val enterNewLine = remember { prefs.getBoolean(PreferenceConstants.ENTER_NEW_LINE, false) }
     val volumeKeysChangeFontSize = remember { prefs.getBoolean(PreferenceConstants.VOLUME_FONT, true) }
     val keepScreenAwake = remember { prefs.getBoolean(PreferenceConstants.KEEP_ALIVE, true) }
 
@@ -1181,6 +1184,7 @@ fun ConsoleScreen(
                                             diffBridge = bridge
                                         },
                                         draft = dictationDraft,
+                                        enterNewLine = enterNewLine,
                                         modifier = barModifier,
                                     )
                                 },
@@ -1478,6 +1482,17 @@ fun ConsoleScreen(
                             Icon(
                                 Icons.Default.EditNote,
                                 contentDescription = stringResource(R.string.console_menu_text_input),
+                            )
+                        }
+
+                        // The settings panel
+                        IconButton(onClick = {
+                            usage.log(UsageActions.CONSOLE_SETTINGS)
+                            onNavigateToRoute(NavDestinations.SETTINGS_PANEL)
+                        }) {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = stringResource(R.string.title_settings),
                             )
                         }
 
