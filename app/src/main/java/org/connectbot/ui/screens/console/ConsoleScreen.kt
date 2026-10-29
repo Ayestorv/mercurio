@@ -90,6 +90,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -206,6 +207,7 @@ import solutions.ormus.logos.herd.HerdrAction
 import solutions.ormus.logos.herd.HerdrCommands
 import solutions.ormus.logos.herd.HerdrKeys
 import solutions.ormus.logos.herd.HerdrSwipe
+import solutions.ormus.logos.pad.PadControl
 import solutions.ormus.logos.terminal.BracketedPaste
 import timber.log.Timber
 
@@ -554,6 +556,23 @@ fun ConsoleScreen(
     }
 
     val currentBridge = uiState.bridges.getOrNull(uiState.currentBridgeIndex)
+
+    // A game controller (the Ayn Thor's own pad) drives the session that shows. While it is
+    // attached and on, it replaces the touch key bar, so the terminal gets the whole screen.
+    DisposableEffect(currentBridge) {
+        val shown = currentBridge
+        PadControl.setTarget(shown)
+        onDispose { if (shown != null) PadControl.clearTarget(shown) }
+    }
+    val padConnected by PadControl.connected.collectAsState()
+    val padEnabled by PadControl.enabled.collectAsState()
+    val padActive = padConnected && padEnabled
+    LaunchedEffect(padActive) {
+        if (padActive) {
+            composeBarHeightPx = 0
+            showSoftwareKeyboard = false
+        }
+    }
     // The compose bar's dictation field for this session; the slash menu puts "/name " in it.
     val dictationDraft = remember(currentBridge) { DictationDraft() }
     // These values are computed from bridge state and will recompute when uiState.revision changes
@@ -582,8 +601,9 @@ fun ConsoleScreen(
 
     // Show software keyboard when session becomes open (if no hardware keyboard)
     // Also show when switching to a different bridge that's already open
-    LaunchedEffect(currentBridge, sessionOpen, hasHardwareKeyboard) {
-        if (sessionOpen && !hasHardwareKeyboard) {
+    // A game controller counts as a keyboard here: tap the terminal to type.
+    LaunchedEffect(currentBridge, sessionOpen, hasHardwareKeyboard, padActive) {
+        if (sessionOpen && !hasHardwareKeyboard && !padActive) {
             showSoftwareKeyboard = true
         }
     }
@@ -1118,75 +1138,77 @@ fun ConsoleScreen(
                                 promptActive = promptState != null,
                                 onComposeBarHeightChange = { composeBarHeightPx = it },
                                 composeBar = { barModifier ->
-                                    TerminalComposeBar(
-                                        bridge = bridge,
-                                        onSend = { handleTerminalInteraction() },
-                                        onPasteScreenshot = {
-                                            if (ContextCompat.checkSelfPermission(
-                                                    context,
-                                                    mediaPermission,
-                                                ) != PackageManager.PERMISSION_GRANTED
-                                            ) {
-                                                mediaPermissionLauncher.launch(mediaPermission)
-                                                null
-                                            } else {
-                                                withContext(Dispatchers.IO) {
-                                                    val shot = loadLatestScreenshot(context)
-                                                    if (shot == null) {
-                                                        null
-                                                    } else {
-                                                        val remote =
-                                                            "/tmp/logos-pastes/shot-${System.currentTimeMillis()}.png"
-                                                        val ssh = bridge.transport as? SSH
-                                                        if (ssh != null &&
-                                                            runCatching { ssh.uploadFile(remote, shot) }.isSuccess
-                                                        ) {
-                                                            remote
-                                                        } else {
+                                    if (!padActive) {
+                                        TerminalComposeBar(
+                                            bridge = bridge,
+                                            onSend = { handleTerminalInteraction() },
+                                            onPasteScreenshot = {
+                                                if (ContextCompat.checkSelfPermission(
+                                                        context,
+                                                        mediaPermission,
+                                                    ) != PackageManager.PERMISSION_GRANTED
+                                                ) {
+                                                    mediaPermissionLauncher.launch(mediaPermission)
+                                                    null
+                                                } else {
+                                                    withContext(Dispatchers.IO) {
+                                                        val shot = loadLatestScreenshot(context)
+                                                        if (shot == null) {
                                                             null
+                                                        } else {
+                                                            val remote =
+                                                                "/tmp/logos-pastes/shot-${System.currentTimeMillis()}.png"
+                                                            val ssh = bridge.transport as? SSH
+                                                            if (ssh != null &&
+                                                                runCatching { ssh.uploadFile(remote, shot) }.isSuccess
+                                                            ) {
+                                                                remote
+                                                            } else {
+                                                                null
+                                                            }
                                                         }
                                                     }
                                                 }
-                                            }
-                                        },
-                                        // An agent pane reads as a chat; anything else as its output.
-                                        onRead = {
-                                            val attached = bridge.herd?.attached?.value ?: HerdrCommands.DEFAULT_SESSION
-                                            if (AgentChat.target(bridge.herd?.snapshotOf(attached)) != null) {
+                                            },
+                                            // An agent pane reads as a chat; anything else as its output.
+                                            onRead = {
+                                                val attached = bridge.herd?.attached?.value ?: HerdrCommands.DEFAULT_SESSION
+                                                if (AgentChat.target(bridge.herd?.snapshotOf(attached)) != null) {
+                                                    usage.log(UsageActions.CHAT_OPEN)
+                                                    chatSession = attached
+                                                    chatPane = null
+                                                    chatBridge = bridge
+                                                } else {
+                                                    showOutputReader = true
+                                                }
+                                            },
+                                            onChat = {
                                                 usage.log(UsageActions.CHAT_OPEN)
-                                                chatSession = attached
+                                                herdrPanelBridge = null
+                                                chatSession = bridge.herd?.chosen?.value ?: HerdrCommands.DEFAULT_SESSION
                                                 chatPane = null
                                                 chatBridge = bridge
-                                            } else {
-                                                showOutputReader = true
-                                            }
-                                        },
-                                        onChat = {
-                                            usage.log(UsageActions.CHAT_OPEN)
-                                            herdrPanelBridge = null
-                                            chatSession = bridge.herd?.chosen?.value ?: HerdrCommands.DEFAULT_SESSION
-                                            chatPane = null
-                                            chatBridge = bridge
-                                        },
-                                        onBoard = {
-                                            herdrPanelBridge = null
-                                            boardBridge = bridge
-                                        },
-                                        boardOpen = boardBridge != null,
-                                        // Herdr key once the session's Herdr side is up.
-                                        herdrPanelOpen = herdrPanelBridge === bridge,
-                                        onHerdrPanelChange = bridge.herd?.let {
-                                            { open: Boolean -> herdrPanelBridge = if (open) bridge else null }
-                                        },
-                                        onSlashMenu = { slashBridge = bridge },
-                                        onDiff = {
-                                            herdrPanelBridge = null
-                                            diffBridge = bridge
-                                        },
-                                        draft = dictationDraft,
-                                        enterNewLine = enterNewLine,
-                                        modifier = barModifier,
-                                    )
+                                            },
+                                            onBoard = {
+                                                herdrPanelBridge = null
+                                                boardBridge = bridge
+                                            },
+                                            boardOpen = boardBridge != null,
+                                            // Herdr key once the session's Herdr side is up.
+                                            herdrPanelOpen = herdrPanelBridge === bridge,
+                                            onHerdrPanelChange = bridge.herd?.let {
+                                                { open: Boolean -> herdrPanelBridge = if (open) bridge else null }
+                                            },
+                                            onSlashMenu = { slashBridge = bridge },
+                                            onDiff = {
+                                                herdrPanelBridge = null
+                                                diffBridge = bridge
+                                            },
+                                            draft = dictationDraft,
+                                            enterNewLine = enterNewLine,
+                                            modifier = barModifier,
+                                        )
+                                    }
                                 },
                                 prompt = { promptModifier ->
                                     InlinePrompt(

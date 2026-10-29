@@ -382,6 +382,15 @@ object UsageActions {
     // it ("Remember password" ticked). Recorded by the SSH transport; never the password.
     const val AUTH_PASSWORD_SAVED = "auth:password-saved"
 
+    // Game controller (Ayn Thor and other pads): Guide toggled pad control, and one
+    // Herdr action sent from a button or stick. Never which key text went out.
+    const val PAD_TOGGLE = "pad:toggle"
+    const val PAD_ACTION = "pad:action"
+
+    // Second-screen Herdr sidebar: a tap focused a workspace or an agent's pane.
+    const val SIDEBAR_WORKSPACE = "sidebar:workspace"
+    const val SIDEBAR_AGENT = "sidebar:agent"
+
     val ALL: List<String> = listOf(
         KEY_MODE, KEY_ESC, KEY_STOP, KEY_CTRL, KEY_CTRL_CHAR, KEY_Y, KEY_N,
         KEY_TAB, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_BOTTOM, KEY_CLEAR_LINE, KEY_ENTER, KEY_OTHER,
@@ -435,6 +444,7 @@ object UsageActions {
         TERMINAL_MOUSE_CLICK, HERDR_DRAG_SCROLL, GESTURE_DRAG_ARROW,
         PUSH_REGISTERED, PUSH_FAILED, PUSH_UNREGISTERED, PUSH_HOST_SYNCED, PUSH_RECEIVED, PUSH_IGNORED,
         AUTH_PASSWORD_SAVED,
+        PAD_TOGGLE, PAD_ACTION, SIDEBAR_WORKSPACE, SIDEBAR_AGENT,
     )
 
     private val known: Set<String> = ALL.toSet()

@@ -242,3 +242,7 @@ push:host-synced
 push:received
 push:ignored
 auth:password-saved
+pad:toggle
+pad:action
+sidebar:workspace
+sidebar:agent

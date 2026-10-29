@@ -2049,4 +2049,28 @@
 	<string name="settings_panel_enter_new_line_off">Enter sends, like the ⏎ key on the bar.</string>
 	<string name="settings_panel_all_settings">All settings</string>
 	<string name="settings_panel_all_settings_summary">Terminal, keyboard, fonts and connections</string>
+	<!-- Second-screen Herdr sidebar (Ayn Thor lower display): title while no console session shows. -->
+	<string name="sidebar_no_session_title">Mercurio</string>
+	<!-- Second-screen sidebar: hint while no console session shows. -->
+	<string name="sidebar_no_session">Open a host on the top screen. Its Herdr workspaces and agents show here.</string>
+	<!-- Second-screen sidebar: the session on top does not run Herdr (yet). -->
+	<string name="sidebar_no_herdr">Waiting for Herdr in this session.</string>
+	<!-- Second-screen sidebar: the first Herdr snapshot has not arrived. -->
+	<string name="sidebar_loading">Reading Herdr…</string>
+	<!-- Second-screen sidebar header: game controller control is on; tap shows the controls. -->
+	<string name="sidebar_pad_on">Controller on</string>
+	<!-- Second-screen sidebar header: game controller control is off (Guide or View+Menu turns it on). -->
+	<string name="sidebar_pad_off">Controller off</string>
+	<!-- Second-screen sidebar footer before any controller action. -->
+	<string name="sidebar_pad_hint">Tap Controller on for the button map.</string>
+	<!-- Second-screen sidebar: agent state labels. -->
+	<string name="sidebar_status_blocked">needs you</string>
+	<string name="sidebar_status_done">done</string>
+	<string name="sidebar_status_working">working</string>
+	<string name="sidebar_status_idle">idle</string>
+	<string name="sidebar_status_unknown">—</string>
+	<!-- Second-screen sidebar title: every host's Herdr workspaces and agents. -->
+	<string name="sidebar_title">Herdr · all hosts</string>
+	<!-- Second-screen sidebar: beside the host whose console shows on the top screen. -->
+	<string name="sidebar_host_on_top">on top</string>
 </resources>

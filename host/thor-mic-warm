@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Keep thor-mic's shared SSH connections to every Herdr machine open, so holding Y on the
+# Ayn Thor reaches agents on those machines at once instead of after an SSH login.
+ENDPOINTS=$HOME/.local/state/herdr/client/endpoints.json
+SSHOPTS=(-o BatchMode=yes -o ControlMaster=auto -o "ControlPath=$HOME/.ssh/thor-mic-%C" -o ControlPersist=yes -o ConnectTimeout=8 -o ServerAliveInterval=30)
+while true; do
+  if [ -f "$ENDPOINTS" ]; then
+    python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+print("\n".join(e["target"] for e in d.get("ssh", []) if e.get("enabled", True)))' "$ENDPOINTS" 2>/dev/null |
+      while read -r t; do
+        [ -z "$t" ] && continue
+        ssh "${SSHOPTS[@]}" -O check "$t" 2>/dev/null || ssh "${SSHOPTS[@]}" -fN "$t" </dev/null 2>/dev/null
+      done
+  fi
+  sleep 60
+done

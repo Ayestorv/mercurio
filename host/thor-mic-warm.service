@@ -1,0 +1,11 @@
+[Unit]
+Description=Keep thor-mic SSH masters to the Herdr machines open (Ayn Thor voice fan-out)
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/thor-mic-warm
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

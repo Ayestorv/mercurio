@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Ayn Thor mic for Claude Code voice. Mercurio (on the Thor) runs this over SSH while the
+# controller's Y is held and writes the Thor's microphone to stdin as raw s16le 48 kHz mono.
+# For as long as stdin stays open, the virtual source "thor_mic" (Ayn-Thor-Mic) is the default
+# source, so `arecord`/`rec` started by Claude Code record the Thor. When stdin closes, the
+# previous default (usually mac_tunnel) comes back. mac-mic-tunnel backs off while the
+# flag file below names a live process.
+#
+# Fan-out: on a host whose Herdr client has SSH machines (ayes), the same audio also goes to
+# every enabled machine's thor-mic, so an agent on any of them hears the Thor while you talk
+# through this host's Herdr. Remote copies run with THOR_MIC_NO_FANOUT=1 (no loops). The SSH
+# connections are shared masters kept warm by thor-mic-warm, so a press starts at once.
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+FLAG=$HOME/.cache/thor-mic-active
+PREV=$HOME/.cache/thor-mic-prev
+ENDPOINTS=$HOME/.local/state/herdr/client/endpoints.json
+mkdir -p "$HOME/.cache"
+
+pactl list short sinks 2>/dev/null | grep -q $'\tthor_mic_sink\t' ||
+  pactl load-module module-null-sink sink_name=thor_mic_sink \
+    sink_properties=device.description=Thor-Mic-Sink rate=48000 channels=1 >/dev/null
+pactl list short sources 2>/dev/null | grep -q $'\tthor_mic\t' ||
+  pactl load-module module-remap-source master=thor_mic_sink.monitor source_name=thor_mic \
+    source_properties=device.description=Ayn-Thor-Mic >/dev/null
+
+prev=$(pactl get-default-source 2>/dev/null)
+# A press that overlaps the last one's tail: keep the source from before the Thor took over.
+if [ "$prev" = thor_mic ]; then prev=$(cat "$PREV" 2>/dev/null); else echo "$prev" > "$PREV"; fi
+echo $$ > "$FLAG"
+pactl set-default-source thor_mic
+
+restore() {
+  # Only the newest press restores; an older one ending late must not undo a newer one.
+  if [ "$(cat "$FLAG" 2>/dev/null)" = "$$" ]; then
+    : > "$FLAG"
+    [ -n "$prev" ] && pactl set-default-source "$prev"
+  fi
+}
+trap restore EXIT
+trap 'exit 143' TERM INT HUP
+
+play() {
+  pacat --playback --raw --format=s16le --rate=48000 --channels=1 \
+    --device=thor_mic_sink --latency-msec=30 --client-name=thor-mic
+}
+
+targets=()
+if [ -z "${THOR_MIC_NO_FANOUT:-}" ] && [ -f "$ENDPOINTS" ]; then
+  mapfile -t targets < <(python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+print("\n".join(e["target"] for e in d.get("ssh", []) if e.get("enabled", True)))' "$ENDPOINTS" 2>/dev/null)
+fi
+
+if [ ${#targets[@]} -eq 0 ]; then
+  play
+  exit
+fi
+
+SSHOPTS=(-o BatchMode=yes -o ControlMaster=auto -o "ControlPath=$HOME/.ssh/thor-mic-%C" -o ControlPersist=yes -o ConnectTimeout=8)
+outs=()
+for t in "${targets[@]}"; do
+  outs+=(">(ssh ${SSHOPTS[*]@Q} ${t@Q} 'THOR_MIC_NO_FANOUT=1 exec \"\$HOME/.local/bin/thor-mic\"' >/dev/null 2>&1)")
+done
+# tee -p: a machine that is down (broken pipe) never stops the others or the local copy.
+eval "tee -p ${outs[*]} | play"

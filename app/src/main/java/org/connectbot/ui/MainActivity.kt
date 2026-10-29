@@ -26,6 +26,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -59,6 +61,8 @@ import org.connectbot.data.entity.Host
 import org.connectbot.service.TerminalManager
 import org.connectbot.ui.components.DisconnectAllDialog
 import org.connectbot.ui.navigation.NavDestinations
+import org.connectbot.ui.screens.herd.HerdSidebarDisplay
+import org.connectbot.ui.screens.herd.SidebarLinks
 import org.connectbot.ui.theme.ConnectBotTheme
 import org.connectbot.usage.UsageTracker
 import org.connectbot.util.IconStyle
@@ -67,6 +71,7 @@ import org.connectbot.util.ShortcutIconGenerator
 import org.connectbot.util.isNotificationPermissionGranted
 import solutions.ormus.logos.herd.HerdrAction
 import solutions.ormus.logos.herd.HerdrCommands
+import solutions.ormus.logos.pad.PadControl
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -112,6 +117,54 @@ class MainActivity : AppCompatActivity() {
     private var hostAwaitingPermission: Host? = null
     internal var makingShortcut by mutableStateOf(false)
     private var showDisconnectAllDialog by mutableStateOf(false)
+
+    private val requestMicPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    // Game controller and the second screen's Herdr sidebar (the Ayn Thor's lower display).
+    private val sidebarDisplay by lazy {
+        HerdSidebarDisplay(
+            this,
+            SidebarLinks(
+                usage = { usageTracker },
+                manager = { (appViewModel.uiState.value as? AppUiState.Ready)?.terminalManager },
+                // The same intent a Herdr notification sends: open (or switch to) the host's console, then focus the pane.
+                open = { host, paneId ->
+                    startActivity(
+                        Intent(this, MainActivity::class.java).apply {
+                            action = Intent.ACTION_VIEW
+                            data = host.getUri()
+                            paneId?.let { putExtra(EXTRA_HERD_PANE, it) }
+                        },
+                    )
+                },
+            ),
+        )
+    }
+    private var stopWatchingPads: (() -> Unit)? = null
+
+    override fun onStart() {
+        super.onStart()
+        PadControl.usage = usageTracker
+        PadControl.init(this)
+        stopWatchingPads = PadControl.watchDevices(this)
+        // Hold-to-talk on a controller (Y) streams this device's mic to the host: ask once a pad is here.
+        if (PadControl.connected.value && !PadControl.micAllowed()) {
+            requestMicPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
+        sidebarDisplay.start()
+    }
+
+    override fun onStop() {
+        sidebarDisplay.stop()
+        stopWatchingPads?.invoke()
+        stopWatchingPads = null
+        PadControl.gamepad.reset()
+        super.onStop()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean = PadControl.gamepad.onKey(event) || super.dispatchKeyEvent(event)
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean = PadControl.gamepad.onMotion(event) || super.dispatchGenericMotionEvent(event)
 
     private val requestNotificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),

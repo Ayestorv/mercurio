@@ -186,6 +186,30 @@ class SSH :
         return hostShell.run(command) { SSH.execDetailed(conn, it, timeoutMs) }
     }
 
+    /**
+     * Run [command] on its own exec channel and hand back its stdin to stream into, for as
+     * long as the caller keeps it open (the Ayn Thor's mic while Y is held). Close the result
+     * to end the stream; the command then sees EOF. Throws [IOException] when it cannot start.
+     */
+    fun openExecStream(command: String): ExecStream {
+        val conn = connection ?: throw IllegalStateException("Not connected")
+        val session = conn.openSession()
+        try {
+            session.execCommand(command)
+        } catch (e: IOException) {
+            session.close()
+            throw e
+        }
+        // Drain its output so a chatty command never stalls on a full channel window.
+        StreamGobbler(session.stdout)
+        StreamGobbler(session.stderr)
+        return ExecStream(session.stdin) {
+            runCatching { session.stdin.close() }
+            session.waitForCondition(ChannelCondition.EXIT_STATUS or ChannelCondition.CLOSED, EXEC_STREAM_CLOSE_MS)
+            session.close()
+        }
+    }
+
     // Mercurio: a Windows host runs exec commands through cmd.exe; HostShell rewrites them once it says so.
     private val hostShell = HostShell()
 
@@ -1713,3 +1737,10 @@ class SSH :
         )
     }
 }
+
+/** A command's stdin from [SSH.openExecStream]: write to [stdin], then [close] to end it. */
+class ExecStream(val stdin: java.io.OutputStream, private val onClose: () -> Unit) : java.io.Closeable {
+    override fun close() = onClose()
+}
+
+private const val EXEC_STREAM_CLOSE_MS = 2_000L

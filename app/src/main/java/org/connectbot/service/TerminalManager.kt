@@ -831,6 +831,18 @@ class TerminalManager :
         }
     }
 
+    /** Every Herdr host's workspaces and agents, for the second screen's sidebar (watch it to poll). */
+    val fleet: HerdFleet by lazy {
+        HerdFleet(
+            scope = scope,
+            io = dispatchers.io,
+            hosts = { hostRepository.getSshHosts() },
+            live = { id -> synchronized(_bridges) { _bridges.firstOrNull { it.host.id == id && it.herd != null && !it.isDisconnected } } },
+            connect = { host -> HeadlessSsh(host, SSH(host, null, this).HostKeyVerifier(host)) },
+            keys = { host -> offlineKeys(host) },
+        )
+    }
+
     /** The keys [host] logs in with without a prompt, once the startup keys are loaded. */
     private suspend fun offlineKeys(host: Host): List<KeyPair> {
         startupKeys?.join()
